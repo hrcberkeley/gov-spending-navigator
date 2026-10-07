@@ -302,7 +302,7 @@ function renderNav() {
   const sorters = { n: (a, b) => b.k.n - a.k.n, ai: (a, b) => b.s[3] + b.s[4] + b.s[5] - a.s[3] - a.s[4] - a.s[5] || b.k.n - a.k.n,
     share: (a, b) => b.s[3] - a.s[3] || b.s[4] - a.s[4], open: (a, b) => b.s[6] + b.s[2] - a.s[6] - a.s[2] };
   kids.sort(sorters[sortBy]);
-  const canSplit = !STATIC && !t.children.length && t.n >= 30;
+  const canSplit = !t.children.length && t.n >= 30;
   $("#nav").innerHTML = `
     <div id="crumbs">${ancestry(t).slice(0, -1).map(a => `<a data-node="${a.id}">${esc(a.parent < 0 ? "All awards" : name(a))}</a><span class="sep">›</span>`).join("")}</div>
     <div id="head">
@@ -359,7 +359,7 @@ async function splitNode(t) {
   const idx = members(t);
   $("#status").textContent = `Finding sub-topics in ${fmt(idx.length)} awards…`;
   let r;
-  try { r = await (await fetch("api/split", { method: "POST", body: JSON.stringify({ idx: Array.from(idx) }) })).json(); }
+  try { r = STATIC ? await splitStatic(idx) : await (await fetch("api/split", { method: "POST", body: JSON.stringify({ idx: Array.from(idx) }) })).json(); }
   catch (e) { r = { error: "The server did not answer: " + e.message }; }
   $("#status").textContent = r.error || "";
   if (r.error) return;
@@ -370,6 +370,75 @@ async function splitNode(t) {
   });
   disambiguate(t.children);
   goTo(t, false);
+}
+// The static site splits in the browser, like server.py's split(): k-means on the awards' 64-d vectors (vecs/<topic>.z,
+// one byte per number), c-TF-IDF keywords from sampled descriptions, label at the densest spot. Keywords name the groups.
+const vecFiles = new Map(); let vecScale;
+async function topicVecs(t) {
+  if (!vecFiles.has(t)) vecFiles.set(t, gunzip(await fetch(`vecs/${t}.z`)).then(b => {
+    const n = new Int32Array(b, 0, 1)[0]; return { idx: new Int32Array(b, 4, n), q: new Int8Array(b, 4 + 4 * n, 64 * n) }; }));
+  return vecFiles.get(t);
+}
+const STOPW = new Set(("a about above after again all also an and any are as at be been before being below between both but by can could did do does " +
+  "during each few for from further had has have having he her here hers him his how i if in into is it its itself just me more most my no nor not " +
+  "now of off on once only or other our out over own same she should so some such than that the their them then there these they this those through " +
+  "to too under until up very was we were what when where which while who whom why will with would you your igf ot cl ct fy fy26 fy2026 fy25 " +
+  "purchase order contract award services service support provide provides requirement requirements funding funds fund base year option period " +
+  "performance modification mod add incremental new project program " +
+  "clin clins description purpose item items spr pr line task delivery date dated").split(" "));
+function kmeans(V, n, k, rng) {  // k-means++ start, then Lloyd; V is n x 64
+  const D = 64, C = new Float32Array(k * D), d2 = new Float32Array(n).fill(Infinity), lab = new Int32Array(n);
+  const dist = (i, c) => { let s = 0; for (let j = 0; j < D; j++) { const x = V[i * D + j] - C[c * D + j]; s += x * x; } return s; };
+  let first = Math.floor(rng() * n); C.set(V.subarray(first * D, first * D + D), 0);
+  for (let c = 1; c < k; c++) {
+    let tot = 0; for (let i = 0; i < n; i++) { d2[i] = Math.min(d2[i], dist(i, c - 1)); tot += d2[i]; }
+    let r = rng() * tot, i = 0; while (i < n - 1 && (r -= d2[i]) > 0) i++; C.set(V.subarray(i * D, i * D + D), c * D);
+  }
+  for (let it = 0; it < 30; it++) {
+    let moved = 0;
+    for (let i = 0; i < n; i++) { let b = 0, bd = Infinity; for (let c = 0; c < k; c++) { const d = dist(i, c); if (d < bd) { bd = d; b = c; } } if (lab[i] !== b) { lab[i] = b; moved++; } }
+    const S = new Float64Array(k * D), cnt = new Int32Array(k);
+    for (let i = 0; i < n; i++) { cnt[lab[i]]++; for (let j = 0; j < D; j++) S[lab[i] * D + j] += V[i * D + j]; }
+    for (let c = 0; c < k; c++) if (cnt[c]) for (let j = 0; j < D; j++) C[c * D + j] = S[c * D + j] / cnt[c];
+    if (!moved && it) break;
+  }
+  return lab;
+}
+function anchorXY(ids) {  // densest cell of a 256 x 256 grid, as topicsutil.anchor
+  const [[lx, ly], [hx, hy]] = meta.bounds, cell = i => Math.min(255, Math.max(0, Math.floor((xy[2*i] - lx) / (hx - lx) * 255))) * 256 + Math.min(255, Math.max(0, Math.floor((xy[2*i+1] - ly) / (hy - ly) * 255)));
+  const c = new Uint32Array(65536); for (const i of ids) c[cell(i)]++; let best = 0; for (let j = 1; j < 65536; j++) if (c[j] > c[best]) best = j;
+  const inside = ids.filter(i => cell(i) === best), med = a => a.sort((x, y) => x - y)[a.length >> 1];
+  return [med(inside.map(i => xy[2*i])), med(inside.map(i => xy[2*i+1]))];
+}
+async function splitStatic(idx) {
+  if (idx.length < 30) return { error: "Too few awards to split (need 30+)." };
+  vecScale ??= await (await fetch("vecs/scale.json")).json();
+  const want = new Set(idx), topics = [...new Set(Array.from(idx, i => fine[i]))];
+  $("#status").textContent = `Loading vectors for ${fmt(idx.length)} awards…`;
+  const ids = [], V = new Float32Array(64 * idx.length);
+  for (const f of await Promise.all(topics.map(topicVecs)))
+    for (let k = 0; k < f.idx.length; k++) if (want.has(f.idx[k])) { const o = 64 * ids.length; for (let j = 0; j < 64; j++) V[o + j] = f.q[64 * k + j] * vecScale[j]; ids.push(f.idx[k]); }
+  const n = ids.length, k = Math.min(8, Math.max(2, Math.round(Math.sqrt(n / 150))));
+  let seed = 1; const rng = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  $("#status").textContent = `Finding sub-topics in ${fmt(n)} awards…`; await new Promise(r => setTimeout(r));
+  let lab = kmeans(V, n, k, rng);
+  const size = new Int32Array(k); for (const l of lab) size[l]++;
+  const rank = [...size.keys()].sort((a, b) => size[b] - size[a]), newOf = new Int32Array(k); rank.forEach((c, r) => newOf[c] = r);
+  lab = lab.map(l => newOf[l]); const groups = rank.map((_, c) => ids.filter((_, j) => lab[j] === c));
+  $("#status").textContent = "Reading sample descriptions for keywords…";
+  const counts = await Promise.all(groups.map(async g => {  // word and two-word counts in up to 60 sampled awards
+    const m = new Map(), docs = await Promise.all(sampleIdx(g, 60).map(getAward));
+    for (const a of docs) {
+      const w = a.descriptions.join(" ").slice(0, 1500).toLowerCase().match(/[a-z][a-z]+/g) || [];
+      w.forEach((x, j) => { if (!STOPW.has(x)) m.set(x, (m.get(x) || 0) + 1); const y = w[j + 1]; if (y && !STOPW.has(x) && !STOPW.has(y)) m.set(x + " " + y, (m.get(x + " " + y) || 0) + 1); });
+    }
+    return m;
+  }));
+  const total = new Map(); for (const m of counts) for (const [w, c] of m) total.set(w, (total.get(w) || 0) + c);
+  const avg = [...total.values()].reduce((a, b) => a + b, 0) / Math.max(1, total.size);
+  const terms = counts.map(m => { const sum = [...m.values()].reduce((a, b) => a + b, 0) || 1;
+    return [...m].filter(([w]) => total.get(w) >= Math.min(2, k)).map(([w, c]) => [w, c / sum * Math.log(1 + k * avg / total.get(w))]).sort((a, b) => b[1] - a[1]).slice(0, 10).map(x => x[0]); });
+  return { idx: ids, assign: Array.from(lab), children: groups.map((g, c) => ({ n: g.length, terms: terms[c], label: terms[c].slice(0, 3).join(", "), xy: anchorXY(g) })) };
 }
 async function splitSelection() {
   const idx = Int32Array.from(selection.idx);
@@ -466,7 +535,7 @@ function renderGroupPanel(idx, title, isSelection) {
     ${n ? `
     <h2>Tag these ${fmt(n)}</h2>
     <div class="row"><input class="tagin" id="tagin" placeholder="one or more tags, comma separated" list="taglist"><button class="btn primary" id="tagadd">Add</button><button class="btn" id="tagrm">Remove</button></div>
-    <div class="row" style="margin-top:10px"><button class="btn" id="expsel">Export as CSV</button>${isSelection && n >= 30 && !STATIC ? '<button class="btn" id="splitsel">Split into sub-topics</button>' : ""}</div>
+    <div class="row" style="margin-top:10px"><button class="btn" id="expsel">Export as CSV</button>${isSelection && n >= 30 ? '<button class="btn" id="splitsel">Split into sub-topics</button>' : ""}</div>
     <h2>Awards</h2>
     <div class="chips" id="lf">${[["all", "All"], ["3", "New leads"], ["4", "AI, listed provider"], ["5", "AI, in report"], ["6", "Unconfirmed"], ["2", "Unclear"], ["1", "Not AI"]].map(([v, l]) => `<button data-f="${v}" class="${v === listFilter ? "on" : ""}">${l}</button>`).join("")}</div>
     <div class="list" id="alist">Loading…</div>
