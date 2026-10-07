@@ -1,0 +1,598 @@
+<!doctype html>
+<html data-static lang="en">
+<head><link rel="icon" href="data:,">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Award Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,500..900&family=Public+Sans:ital,wght@0,400..700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#141a2e; --sheet:#1c2440; --sheet2:#232c4b; --rule:#323c5e;
+  --ink:#e6e9f2; --ink2:#a3a9bd; --ink3:#767d95; --record:#9fb0ff; --hl:#f4e04d; --hl-ink:#141a2e;
+  --ai:#ffd43b; --listed:#4dabf7; --flagged:#ff8a5b; --unlisted:#6b7290;
+  --head:"Archivo","Arial Narrow",sans-serif; --text:"Public Sans","Helvetica Neue",Arial,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--paper);color:var(--ink);font:14px/1.45 var(--text)}
+button,input,select{font:inherit;color:inherit}
+a{color:var(--record)}
+#app{display:grid;grid-template-columns:340px 1fr 400px;height:100vh}
+aside{background:var(--sheet);overflow:auto;min-height:0}
+#left{border-right:1px solid var(--rule);display:flex;flex-direction:column}
+#right{border-left:1px solid var(--rule);padding:18px 20px 40px}
+h1{font:800 20px/1.1 var(--head);font-stretch:85%;margin:16px 18px 10px}
+h2{font:700 16px/1.2 var(--head);font-stretch:90%;margin:20px 0 8px}
+#search{margin:0 18px 6px;padding:7px 10px;border:1px solid var(--rule);background:var(--paper);border-radius:4px;width:calc(100% - 36px)}
+#results{margin:0 10px;display:none}
+#results div{padding:6px 8px;border-radius:4px;cursor:pointer}
+#results div:hover{background:var(--sheet2)}
+#results small{display:block;color:var(--ink3)}
+#nav{flex:1;overflow:auto;padding:4px 0 24px}
+#crumbs{padding:6px 18px 0;font-size:13px;color:var(--ink3)}
+#crumbs a{color:var(--ink2);text-decoration:none;cursor:pointer}
+#crumbs a:hover{color:var(--ink);text-decoration:underline}
+#crumbs .sep{margin:0 5px;color:var(--ink3)}
+#head{padding:6px 18px 12px;border-bottom:1px solid var(--rule)}
+#head h2{font-size:22px;margin:4px 0 2px;font-stretch:85%;line-height:1.1}
+#head .kw{color:var(--ink3);font-size:12.5px;margin:2px 0 10px}
+.mix{display:grid;gap:3px}
+.mix button{display:grid;grid-template-columns:12px 1fr auto;gap:8px;align-items:center;background:none;border:0;padding:3px 6px;margin:0 -6px;border-radius:4px;text-align:left;cursor:pointer;font-size:13px}
+.mix button:hover{background:var(--sheet2)}
+.mix .grp{font-size:11.5px;color:var(--ink3);margin:6px 0 0}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+.n{color:var(--ink3);font-variant-numeric:tabular-nums;font-size:12px;white-space:nowrap}
+#actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+#sortbar{display:flex;gap:6px;align-items:center;padding:10px 18px 4px;font-size:12.5px;color:var(--ink3);flex-wrap:wrap}
+#sortbar button{background:none;border:0;padding:2px 6px;border-radius:3px;cursor:pointer;color:var(--ink2)}
+#sortbar button.on{background:var(--ink);color:var(--paper)}
+#kids{list-style:none;margin:0;padding:0 8px}
+#kids li{display:grid;grid-template-columns:14px 1fr auto;gap:9px;padding:7px 10px;border-radius:5px;cursor:pointer;align-items:start}
+#kids li:hover{background:var(--sheet2)}
+#kids .sw{width:12px;height:12px;border-radius:3px;margin-top:3px}
+#kids .nm{font-weight:600;line-height:1.25}
+#kids .sub{font-size:12px;color:var(--ink3);margin-top:2px}
+#kids .sub b{font-weight:600}
+#kids .more{color:var(--ink3);font-size:12px;font-weight:400}
+.b-ai{color:var(--ai)} .b-listed{color:var(--listed)} .b-new{color:var(--flagged)} .b-unconf{color:#f783ac} .b-unclear{color:#a99cf0} .b-not{color:var(--ink3)}
+.mix .row5{display:grid;grid-template-columns:18px 1fr auto;align-items:center;gap:2px}
+.mix .row5 input{accent-color:var(--ink2);margin:0}
+.mix .only{background:none;border:0;color:var(--ink3);font-size:11.5px;padding:0 4px;margin-left:6px;cursor:pointer;visibility:hidden}
+.mix .row5:hover .only{visibility:visible}
+.mix .only:hover{color:var(--ink);text-decoration:underline}
+.mix .off button[data-status]{opacity:.45}
+#filtered{font-size:12px;color:var(--hl);margin:8px 0 0;display:none}
+#filtered button{background:none;border:0;color:var(--ink2);text-decoration:underline;cursor:pointer;padding:0;font-size:12px}
+#map{position:relative;min-width:0}
+#graph{position:absolute;inset:0}
+#labels{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.lab{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;font:700 13px/1.1 var(--head);font-stretch:85%;color:#fff;
+  text-shadow:0 0 3px var(--paper),0 0 6px var(--paper),0 0 10px var(--paper);pointer-events:auto;cursor:pointer;max-width:240px;overflow:hidden;text-overflow:ellipsis;display:flex;gap:5px;align-items:center}
+.lab i{width:9px;height:9px;border-radius:2px;flex:none;box-shadow:0 0 0 1px var(--paper)}
+.lab.small{font:600 11.5px/1.1 var(--text);color:#d9dcea}
+#lasso{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+#map.lassoing #lasso{pointer-events:auto;cursor:crosshair}
+#bar{position:absolute;top:12px;left:12px;right:12px;display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;pointer-events:none}
+#bar>*{pointer-events:auto}
+.seg{display:inline-flex;background:var(--sheet);border:1px solid var(--rule);border-radius:5px;overflow:hidden}
+.seg button{background:none;border:0;padding:6px 11px;cursor:pointer;color:var(--ink2)}
+.seg button.on{background:var(--ink);color:var(--paper)}
+.toggle{background:var(--sheet);border:1px solid var(--rule);border-radius:5px;padding:5px 10px;display:inline-flex;gap:7px;align-items:center;cursor:pointer;color:var(--ink2)}
+.toggle input{accent-color:var(--ai)}
+#legend{background:var(--sheet);border:1px solid var(--rule);border-radius:5px;padding:6px 10px;font-size:12px;display:none;max-width:520px}
+#legend span{margin-right:12px;white-space:nowrap;display:inline-flex;gap:5px;align-items:center}
+#hover{position:absolute;pointer-events:none;background:var(--sheet);border:1px solid var(--rule);border-radius:4px;padding:5px 8px;font-size:12px;display:none;max-width:340px;z-index:2}
+#status{position:absolute;bottom:10px;left:12px;color:var(--ink2);font-size:12.5px}
+.btn{background:var(--sheet2);border:1px solid var(--rule);border-radius:4px;padding:6px 11px;cursor:pointer}
+.btn:hover{border-color:var(--ink2)}
+.btn.primary{background:var(--hl);color:var(--hl-ink);border-color:var(--hl);font-weight:600}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+dl{display:grid;grid-template-columns:110px 1fr;gap:4px 10px;margin:0}
+dt{color:var(--ink3)}dd{margin:0;overflow-wrap:anywhere}
+.desc{background:var(--paper);border-radius:4px;padding:10px 12px;margin:8px 0;white-space:pre-wrap;font-size:13px;max-height:280px;overflow:auto}
+.tag{display:inline-flex;gap:6px;align-items:center;background:var(--hl);color:var(--hl-ink);border-radius:3px;padding:1px 7px;font-size:12px;margin:2px 4px 2px 0}
+.tag button{background:none;border:0;padding:0;cursor:pointer;color:inherit;font-weight:700}
+.bars div{display:grid;grid-template-columns:1fr 96px;gap:8px;font-size:13px;padding:3px 0}
+.bars div[data-leaf]{cursor:pointer}
+.bars div[data-leaf]:hover{color:var(--hl)}
+.bars i{display:block;height:3px;background:var(--record);margin-top:2px}
+.list{font-size:13px}
+.list div{padding:6px 0;border-bottom:1px solid var(--rule);cursor:pointer;display:grid;grid-template-columns:10px 1fr;gap:8px}
+.list div:hover{color:var(--hl)}
+.list .dot{margin-top:5px}
+.muted{color:var(--ink3)}
+input.tagin{flex:1;min-width:140px;padding:6px 9px;border:1px solid var(--rule);background:var(--paper);border-radius:4px}
+#tags label{display:flex;gap:8px;align-items:center;padding:3px 0}
+.empty p{margin:0 0 10px;color:var(--ink2)}
+.method{color:var(--ink2);line-height:1.5}
+.method h1{font-size:18px;color:var(--ink);margin:22px 0 8px;line-height:1.25} .method h1:first-child{margin-top:0}
+.method h2{font-size:14.5px;color:var(--ink);margin:18px 0 6px}
+.method p,.method ol,.method ul{margin:0 0 10px} .method ol,.method ul{padding-left:20px} .method li{margin-bottom:4px}
+.method strong{color:var(--ink)}
+.method table{border-collapse:collapse;width:100%;font-size:12.5px;margin:0 0 12px;display:block;overflow-x:auto}
+.method th,.method td{border-bottom:1px solid var(--line, #2a3150);padding:4px 6px;text-align:left;vertical-align:top}
+.method th{color:var(--ink)}
+kbd{border:1px solid var(--rule);border-radius:3px;padding:0 4px;font-size:12px}
+.path a{cursor:pointer;text-decoration:none}
+.path a:hover{text-decoration:underline}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+.chips button{background:var(--sheet2);border:1px solid var(--rule);border-radius:12px;padding:2px 10px;font-size:12px;cursor:pointer;color:var(--ink2)}
+.chips button.on{border-color:var(--ink);color:var(--ink)}
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="left">
+    <h1>Federal award map, FY2026</h1>
+    <input id="search" placeholder="Find a topic, e.g. machine learning" autocomplete="off">
+    <div id="results"></div>
+    <div id="nav"></div>
+  </aside>
+  <main id="map">
+    <div id="graph"></div>
+    <div id="labels"></div>
+    <canvas id="lasso"></canvas>
+    <div id="bar">
+      <div class="seg" id="tool"><button data-v="pan" class="on">Pan</button><button data-v="lasso">Lasso <kbd>L</kbd></button></div>
+      <div class="seg" id="colorby"><button data-v="topic" class="on">Sub-topics</button><button data-v="status">AI review</button><button data-v="kind">Type</button><button data-v="agency">Agency</button></div>
+      <label class="toggle"><input type="checkbox" id="ring"> Ring our report awards</label>
+      <div id="legend"></div>
+    </div>
+    <div id="hover"></div>
+    <div id="status"></div>
+  </main>
+  <aside id="right"><div id="panel"></div></aside>
+</div>
+<script type="module">
+import { Graph } from "./vendor/cosmos.js";
+const $ = s => document.querySelector(s), esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmt = n => n.toLocaleString("en-US"), pct = (a, b) => b ? (100 * a / b < 1 && a ? "<1" : Math.round(100 * a / b)) + "%" : "0%";
+// Two modes. With server.py: the api/ endpoints. Published as static files (build_static.py sets data-static):
+// gzip files named .z (so web servers do not re-encode them), award details in shards of 1,000, tags in this browser only.
+const STATIC = document.documentElement.hasAttribute("data-static"), SHARD = 1000;
+const gunzip = async r => { if (!r.ok) throw new Error(r.status); return new Response(r.body.pipeThrough(new DecompressionStream("gzip"))).arrayBuffer(); };
+const bin = async (f, T) => new T(STATIC ? await gunzip(await fetch("data/" + f + ".z")) : await (await fetch("data/" + f)).arrayBuffer());
+const shards = new Map();
+async function getAward(i) {
+  if (!STATIC) return (await fetch("api/award/" + i)).json();
+  const s = Math.floor(i / SHARD);
+  if (!shards.has(s)) shards.set(s, gunzip(await fetch(`awards/${s}.z`)).then(b => JSON.parse(new TextDecoder().decode(b))));
+  const [key, uei, recipient, kind, agency, award_id, descriptions] = (await shards.get(s))[i % SHARD];
+  return { idx: i, key, uei, recipient, kind, agency, award_id, descriptions, url: `https://www.usaspending.gov/award/${encodeURIComponent(key)}/`, tags: localTags().filter(([t, ids]) => ids.includes(i)).map(([t]) => t) };
+}
+const localTags = () => { try { return Object.entries(JSON.parse(localStorage.getItem("award-map-tags") || "{}")); } catch { return []; } };
+const [meta, labels, xy, fine, agency, kind, status, role, pai] = await Promise.all([
+  fetch("data/meta.json").then(r => r.json()), fetch("data/labels.json").then(r => r.ok ? r.json() : {}).catch(() => ({})),
+  bin("xy.bin", Float32Array), bin("fine.bin", Uint16Array), bin("agency.bin", Uint8Array), bin("kind.bin", Uint8Array), bin("review.bin", Uint8Array), bin("role.bin", Uint8Array), bin("pai.bin", Uint8Array)]);
+const N = meta.n, SPACE = 8192, FINE = meta.fine.length, T = meta.tree;
+
+// ---- topic tree ----------------------------------------------------------------------------------------------
+for (const t of T) t.label = t.topic >= 0 ? labels.fine?.[t.topic] : labels.tree?.[t.id];
+const name = t => (t.label || t.terms.slice(0, 3).join(", ")) + (t.suffix || "");
+// siblings that got the same name (e.g. eight "Aviation turbine fuel" topics) are told apart by their most distinctive word
+function disambiguate(ids) {
+  const groups = {}; for (const id of ids) (groups[name(T[id]).toLowerCase()] ??= []).push(T[id]);
+  for (const g of Object.values(groups)) if (g.length > 1) for (const t of g) {
+    const w = t.terms.find(w => !t.label?.toLowerCase().includes(w) && !g.every(o => o.terms.includes(w))); if (w) t.suffix = `: ${w}`;
+  }
+}
+for (const t of T) disambiguate(t.children);
+const leafOf = new Int32Array(FINE); for (const t of T) if (t.topic >= 0) leafOf[t.topic] = t.id;
+const leavesMemo = new Map();
+const leavesUnder = t => { if (!leavesMemo.has(t.id)) leavesMemo.set(t.id, t.topic >= 0 ? [t.topic] : t.children.flatMap(c => leavesUnder(T[c]))); return leavesMemo.get(t.id); };
+const ancestry = t => { const p = []; for (let x = t; x; x = x.parent >= 0 ? T[x.parent] : null) p.unshift(x); return p; };
+const kidsOf = t => t.children.map(c => T[c]);
+function members(t) {  // award indices in a node: split nodes carry them, precomputed ones are found via their leaf topics
+  if (t.idx) return t.idx;
+  const inT = new Uint8Array(FINE); for (const l of leavesUnder(t)) inT[l] = 1;
+  const out = []; for (let i = 0; i < N; i++) if (inT[fine[i]]) out.push(i); return Int32Array.from(out);
+}
+
+// ---- positions, scaled into cosmos space ourselves so label coordinates match ----------------------------------------
+const [[x0, y0], [x1, y1]] = meta.bounds;
+const sc = SPACE * 0.9 / Math.max(x1 - x0, y1 - y0), ox = (SPACE - (x1 - x0) * sc) / 2, oy = (SPACE - (y1 - y0) * sc) / 2;
+const toSpace = ([x, y]) => [(x - x0) * sc + ox, (y - y0) * sc + oy];
+const pos = new Float32Array(2 * N);
+for (let i = 0; i < N; i++) { pos[2*i] = (xy[2*i] - x0) * sc + ox; pos[2*i+1] = (xy[2*i+1] - y0) * sc + oy; }
+
+// ---- colour ---------------------------------------------------------------------------------------------------
+// One job per colour: sub-topic hues never use yellow, which is reserved for our AI awards and for selections.
+const hex = h => [1, 3, 5].map(k => parseInt(h.slice(k, k + 2), 16) / 255);
+const PAL = ["#6ea8fe","#f4a259","#5cc8a1","#e5707e","#b392f0","#9bd164","#f08cc0","#d4b483","#62d0e3","#a8b0c4"].map(hex);
+const css = c => `rgb(${c.map(v => Math.round(v * 255)).join(",")})`;
+// review.bin (review_status.py): one decision per award from the Jev pass. 0 not looked at (outside scope), 1 not AI,
+// 2 unclear, 3 AI new lead (recipient not in our list), 4 AI from a listed provider, award not in report, 5 AI in our report,
+// 6 in our report but Jev says not AI or unclear
+const ST = { names: ["Not looked at (outside scope)", "Not AI", "Unclear", "AI, new lead", "AI, listed provider, not in report", "AI, in our report", "In our report, not confirmed"],
+  colors: ["#3d4463", "#6b7290", "#a99cf0", "#ff8a5b", "#4dabf7", "#ffd43b", "#f783ac"].map(hex), alpha: [0.25, 0.35, 0.7, 1, 1, 1, 1], size: [1.4, 1.6, 2.5, 6, 4.5, 4.5, 5],
+  cls: ["b-not", "b-not", "b-unclear", "b-new", "b-listed", "b-ai", "b-unconf"] };
+const ROLE = ["", "develops AI", "buys an AI product", "AI services", "resells AI", "AI-adjacent"];
+const why = i => pai[i] === 255 ? "" : `${ROLE[role[i]] ? ROLE[role[i]] + ", " : ""}Jev: ${pai[i]}% AI-related`;
+const visible = Array(7).fill(true);  // show/hide per category, in every colouring
+const OUT = [0.3, 0.33, 0.44], OUT_A = 0.05;  // awards outside the group being explored
+const colorBuf = new Float32Array(4 * N), sizeBuf = new Float32Array(N), groupOf = new Int16Array(N);
+let mode = "topic", agencyRank = new Int16Array(256).fill(9);
+
+// ---- graph ----------------------------------------------------------------------------------------------------
+let ready = false, cur = T[0], selection = null, current = null, nodeZoom = 0, baseZoom = 0, pendingFit = false;
+const labelsEl = $("#labels");
+const graph = new Graph($("#graph"), {
+  enableSimulation: false, rescalePositions: false, spaceSize: SPACE, backgroundColor: "#141a2e",
+  pointDefaultSize: 2, scalePointsOnZoom: false, enableDrag: false, pointGreyoutColor: [0.22, 0.25, 0.36, 1], pointGreyoutOpacity: 0.3,
+  renderHoveredPointRing: true, hoveredPointRingColor: "#ffffff", outlinedPointRingColor: "#ffd43b", fitViewOnInit: true, fitViewPadding: 0.05,
+  onPointClick: i => openAward(i),
+  onPointMouseOver: i => showHover(i), onPointMouseOut: () => ($("#hover").style.display = "none"),
+  onZoom: () => ready && drawLabels(),
+  onZoomEnd: () => { if (!ready) return; const z = graph.getZoomLevel(); if (!baseZoom) baseZoom = z; if (pendingFit) { nodeZoom = z; pendingFit = false; }
+    graph.setConfigPartial({ pointSizeScale: Math.min(4, Math.max(1, Math.sqrt(z / baseZoom))) }); drawLabels(); },
+});
+graph.setPointPositions(pos, true);
+await graph.ready; ready = true; window.graph = graph;
+setTimeout(() => { baseZoom = nodeZoom = graph.getZoomLevel(); drawLabels(); }, 1200);
+
+// groupOf[i] = which sub-topic of the current node award i is in, or -1 when outside the node
+function computeGroups(t) {
+  groupOf.fill(-1);
+  if (t.idx && !t.assign) { for (const i of t.idx) groupOf[i] = 0; return; }
+  if (t.assign) { for (let k = 0; k < t.splitIdx.length; k++) groupOf[t.splitIdx[k]] = t.assign[k]; return; }
+  const map = new Int16Array(FINE).fill(-1);
+  if (!t.children.length) for (const l of leavesUnder(t)) map[l] = 0;
+  else t.children.forEach((c, ci) => { for (const l of leavesUnder(T[c])) map[l] = ci; });
+  for (let i = 0; i < N; i++) groupOf[i] = map[fine[i]];
+}
+function paint() {
+  if (mode === "agency") {  // the 9 largest agencies inside the group get colours; the rest share grey
+    const c = new Uint32Array(256); for (let i = 0; i < N; i++) if (groupOf[i] >= 0) c[agency[i]]++;
+    agencyRank = new Int16Array(256).fill(9); [...c].map((v, k) => [k, v]).filter(x => x[1]).sort((a, b) => b[1] - a[1]).slice(0, 9).forEach(([k], r) => agencyRank[k] = r);
+  }
+  for (let i = 0; i < N; i++) {
+    const g = groupOf[i]; let rgb = OUT, a = OUT_A, s = 1.5;
+    if (!visible[status[i]]) { colorBuf[4*i+3] = 0; sizeBuf[i] = 0; continue; }
+    if (g >= 0) {
+      if (mode === "topic") { rgb = PAL[g % PAL.length]; a = 0.9; s = 2; }
+      else if (mode === "status") { const v = status[i]; rgb = ST.colors[v]; a = ST.alpha[v]; s = ST.size[v]; }
+      else if (mode === "kind") { rgb = kind[i] ? PAL[1] : PAL[0]; a = 0.85; s = 2; }
+      else { const r = agencyRank[agency[i]]; rgb = PAL[r]; a = r === 9 ? 0.5 : 0.9; s = 2; }
+    }
+    colorBuf[4*i] = rgb[0]; colorBuf[4*i+1] = rgb[1]; colorBuf[4*i+2] = rgb[2]; colorBuf[4*i+3] = a; sizeBuf[i] = s;
+  }
+  graph.setPointColors(colorBuf); graph.setPointSizes(sizeBuf); graph.render(); legend();
+}
+function legend() {
+  const L = $("#legend"), item = (c, t) => `<span><i class="dot" style="background:${c}"></i>${esc(t)}</span>`;
+  let html = "";
+  if (mode === "status") html = [3, 4, 5, 6, 2, 1, 0].filter(v => visible[v]).map(v => item(css(ST.colors[v]), ST.names[v])).join("");
+  if (mode === "kind") html = item(css(PAL[0]), "Contract") + item(css(PAL[1]), "Grant");
+  if (mode === "agency") html = [...agencyRank].map((r, k) => [r, k]).filter(x => x[0] < 9).sort((a, b) => a[0] - b[0]).map(([r, k]) => item(css(PAL[r]), meta.agencies[k])).join("") + item(css(PAL[9]), "Other agencies");
+  L.innerHTML = html; L.style.display = html ? "block" : "none";
+}
+const aiIdx = []; for (let i = 0; i < N; i++) if (status[i] >= 5) aiIdx.push(i);
+function outline() {  // yellow rings: our AI awards (toggle) and the award being read
+  const o = $("#ring").checked ? [...aiIdx] : []; if (current != null) o.push(current);
+  graph.setConfigPartial({ outlinedPointIndices: o.length ? o : undefined }); graph.render();
+}
+$("#ring").onchange = outline;
+
+// ---- navigation -----------------------------------------------------------------------------------------------
+let sortBy = "n", kidStats = [], nodeStats = Array(7).fill(0);
+function stats(t) {
+  kidStats = Array.from({ length: Math.max(1, t.children.length) }, () => Array(7).fill(0)); nodeStats = Array(7).fill(0);
+  for (let i = 0; i < N; i++) { const g = groupOf[i]; if (g >= 0) { kidStats[g][status[i]]++; nodeStats[status[i]]++; } }
+}
+function goTo(t, fit = true) {
+  cur = t; selection = null; current = null;
+  computeGroups(t); stats(t); paint(); outline();
+  graph.setConfigPartial({ highlightedPointIndices: undefined }); graph.render();
+  renderNav(); renderNodePanel();
+  if (fit) fitTo(members(t));
+  drawLabels();
+}
+function fitTo(idx) {  // fit the middle 90% of a group, so a few far-off members do not keep the view zoomed out
+  const S = sampleIdx(idx, 20000), xs = S.map(i => pos[2*i]).sort((a, b) => a - b), ys = S.map(i => pos[2*i+1]).sort((a, b) => a - b);
+  const q = (a, p) => a[Math.min(a.length - 1, Math.floor(p * a.length))];
+  pendingFit = true; graph.fitViewByPointPositions([q(xs, .05), q(ys, .05), q(xs, .95), q(ys, .95)], 600, 0.15);
+}
+const sampleIdx = (idx, k) => idx.length <= k ? Array.from(idx) : Array.from({ length: k }, (_, j) => idx[Math.floor(j * idx.length / k)]);
+const mixRow = (v, total) => `<div class="row5 ${visible[v] ? "" : "off"}"><input type="checkbox" data-vis="${v}" ${visible[v] ? "checked" : ""} title="Show or hide on the map">
+  <button data-status="${v}" title="Select these awards"><i class="dot" style="background:${css(ST.colors[v])}"></i><span>${ST.names[v]}</span><span class="n">${fmt(nodeStats[v])} (${pct(nodeStats[v], total)})</span></button>
+  <button class="only" data-only="${v}">only</button></div>`;
+function renderNav() {
+  const t = cur, total = nodeStats.reduce((a, b) => a + b, 0);
+  const kids = kidsOf(t).map((k, ci) => ({ k, ci, s: kidStats[ci] }));
+  const sorters = { n: (a, b) => b.k.n - a.k.n, ai: (a, b) => b.s[3] + b.s[4] + b.s[5] - a.s[3] - a.s[4] - a.s[5] || b.k.n - a.k.n,
+    share: (a, b) => b.s[3] - a.s[3] || b.s[4] - a.s[4], open: (a, b) => b.s[6] + b.s[2] - a.s[6] - a.s[2] };
+  kids.sort(sorters[sortBy]);
+  const canSplit = !STATIC && !t.children.length && t.n >= 30;
+  $("#nav").innerHTML = `
+    <div id="crumbs">${ancestry(t).slice(0, -1).map(a => `<a data-node="${a.id}">${esc(a.parent < 0 ? "All awards" : name(a))}</a><span class="sep">›</span>`).join("")}</div>
+    <div id="head">
+      <h2>${esc(t.parent < 0 ? "All FY2026 awards" : name(t))}</h2>
+      <div class="kw">${fmt(total)} awards${t.parent < 0 || !t.terms.length ? "" : `. Distinctive words: ${esc(t.terms.slice(0, 6).join(", "))}`}</div>
+      <div class="mix">
+        <div class="grp">AI-related</div>${[3, 4, 5].map(v => mixRow(v, total)).join("")}
+        <div class="grp">Needs a look</div>${[6, 2].map(v => mixRow(v, total)).join("")}
+        <div class="grp">Ruled out</div>${[1, 0].map(v => mixRow(v, total)).join("")}
+      </div>
+      <div id="filtered" style="display:${visible.every(Boolean) ? "none" : "block"}">Map shows only ${visible.map((v, k) => v ? ST.names[k].toLowerCase() : null).filter(Boolean).join(", ") || "nothing"}. <button data-showall>Show all</button></div>
+      <div id="actions">
+        ${t.parent >= 0 ? `<button class="btn" id="up">Up a level <kbd>U</kbd></button>` : ""}
+        ${canSplit ? `<button class="btn primary" id="split">Split into sub-topics</button>` : ""}
+      </div>
+    </div>
+    ${kids.length ? `<div id="sortbar">Sub-topics by <button data-s="n">size</button><button data-s="ai">AI awards</button><button data-s="share">new leads</button><button data-s="open">needs a look</button></div>
+    <ol id="kids">${kids.map(({ k, ci, s }) => `<li data-node="${k.id}" data-ci="${ci}"><span class="sw" style="background:${css(PAL[ci % PAL.length])}"></span>
+      <div><div class="nm">${esc(name(k))}</div>
+      <div class="sub">${k.children.length ? `${k.children.length} sub-topics. ` : ""}${s[3] ? `<b class="b-new">${fmt(s[3])} new leads</b>, ` : ""}${s[4] + s[5] ? `<b class="b-ai">${fmt(s[4] + s[5])} AI on our list</b>, ` : ""}${s[6] ? `<b class="b-unconf">${fmt(s[6])} unconfirmed</b>, ` : ""}${s[2] ? `<b class="b-unclear">${fmt(s[2])} unclear</b>, ` : ""}${fmt(s[0] + s[1])} not AI or not looked at</div></div>
+      <span class="n">${fmt(k.n)}</span></li>`).join("")}</ol>`
+    : `<p class="muted" style="padding:12px 18px">This is the finest precomputed topic.${canSplit ? " Split it to see what it contains." : ""}</p>`}`;
+  document.querySelectorAll("#sortbar button").forEach(b => b.classList.toggle("on", b.dataset.s === sortBy));
+}
+$("#nav").addEventListener("click", e => {
+  const n = e.target.closest("[data-node]"), s = e.target.closest("[data-s]"), st = e.target.closest("[data-status]");
+  const vis = e.target.closest("[data-vis]"), only = e.target.closest("[data-only]");
+  if (vis) { visible[+vis.dataset.vis] = vis.checked; return refilter(); }
+  if (only) { visible.fill(false); visible[+only.dataset.only] = true; return refilter(); }
+  if (e.target.closest("[data-showall]")) { visible.fill(true); return refilter(); }
+  if (n) return goTo(T[+n.dataset.node]);
+  if (s) { sortBy = s.dataset.s; return renderNav(); }
+  if (st) { const v = +st.dataset.status, idx = []; for (let i = 0; i < N; i++) if (groupOf[i] >= 0 && status[i] === v) idx.push(i);
+    return setSelection(idx, `${ST.names[v]}, in ${cur.parent < 0 ? "all awards" : name(cur)}`); }
+  if (e.target.closest("#up")) return goUp();
+  if (e.target.closest("#split")) return splitNode(cur);
+});
+let hoverTimer, hovered = -1;
+$("#nav").addEventListener("mouseover", e => { const li = e.target.closest("#kids li"); hoverKid(li ? +li.dataset.ci : -1); });
+$("#nav").addEventListener("mouseleave", () => hoverKid(-1));
+function hoverKid(ci) {  // preview a sub-topic on the map
+  if (ci === hovered) return; hovered = ci; clearTimeout(hoverTimer);
+  hoverTimer = setTimeout(() => {
+    let idx = selection ? selection.idx : undefined;
+    if (ci >= 0) { idx = []; for (let i = 0; i < N; i++) if (groupOf[i] === ci) idx.push(i); }
+    graph.setConfigPartial({ highlightedPointIndices: idx }); graph.render();
+  }, 120);
+}
+const goUp = () => cur.parent >= 0 && goTo(T[cur.parent]);
+function refilter() { paint(); renderNav(); }
+
+// ---- on-demand split: below the precomputed tree, or of a lasso selection ------------------------------------------
+async function splitNode(t) {
+  const idx = members(t);
+  $("#status").textContent = `Finding sub-topics in ${fmt(idx.length)} awards…`;
+  let r;
+  try { r = await (await fetch("api/split", { method: "POST", body: JSON.stringify({ idx: Array.from(idx) }) })).json(); }
+  catch (e) { r = { error: "The server did not answer: " + e.message }; }
+  $("#status").textContent = r.error || "";
+  if (r.error) return;
+  t.splitIdx = Int32Array.from(r.idx); t.assign = Int8Array.from(r.assign);
+  t.children = r.children.map((c, ci) => {
+    const kid = { id: T.length, parent: t.id, depth: t.depth + 1, children: [], topic: -1, n: c.n, terms: c.terms, xy: c.xy, label: c.label };
+    kid.idx = t.splitIdx.filter((_, k) => t.assign[k] === ci); T.push(kid); return kid.id;
+  });
+  disambiguate(t.children);
+  goTo(t, false);
+}
+async function splitSelection() {
+  const idx = Int32Array.from(selection.idx);
+  const t = { id: T.length, parent: cur.id, depth: cur.depth + 1, children: [], topic: -1, n: idx.length, terms: [], xy: [0, 0],
+              label: `Your selection (${fmt(idx.length)})`, idx };
+  T.push(t); cur = t; await splitNode(t);
+}
+
+// ---- labels on the map: the current node's sub-topics; zoom in to see theirs ------------------------------------------
+function drawLabels() {
+  const rel = nodeZoom ? graph.getZoomLevel() / nodeZoom : 1;
+  const kids = kidsOf(cur).map((k, ci) => ({ t: k, color: PAL[ci % PAL.length], small: false }));
+  let items = rel > 2.5 ? kids.flatMap(k => k.t.children.length ? kidsOf(k.t).map(g => ({ t: g, color: k.color, small: true })) : [k]) : kids;
+  if (!items.length && cur.parent >= 0 && cur.xy) items = [{ t: cur, color: PAL[0], small: false }];
+  const W = labelsEl.clientWidth, H = labelsEl.clientHeight, placed = []; let html = "";
+  for (const { t, color, small } of items.sort((a, b) => b.t.n - a.t.n)) {
+    const [sx, sy] = graph.spaceToScreenPosition(toSpace(t.xy));
+    if (sx < 0 || sy < 0 || sx > W || sy > H) continue;
+    const text = name(t), w = Math.min(240, text.length * (small ? 6.2 : 7.2)) + 22, h = 18, box = [sx - w / 2, sy - h / 2, sx + w / 2, sy + h / 2];
+    if (placed.some(b => box[0] < b[2] && box[2] > b[0] && box[1] < b[3] && box[3] > b[1])) continue;
+    placed.push(box);
+    html += `<div class="lab ${small ? "small" : ""}" data-node="${t.id}" style="left:${sx}px;top:${sy}px"><i style="background:${css(color)}"></i>${esc(text)}</div>`;
+  }
+  labelsEl.innerHTML = html;
+}
+labelsEl.addEventListener("click", e => { const d = e.target.closest("[data-node]"); if (d && +d.dataset.node !== cur.id) goTo(T[+d.dataset.node]); });
+new ResizeObserver(drawLabels).observe(labelsEl);
+
+// ---- search ---------------------------------------------------------------------------------------------------
+$("#search").oninput = e => {
+  const q = e.target.value.trim().toLowerCase(), R = $("#results");
+  if (q.length < 2) { R.style.display = "none"; return; }
+  const hits = T.filter(t => t.parent >= 0 && (name(t).toLowerCase().includes(q) || t.terms.some(w => w.includes(q))))
+    .sort((a, b) => (name(b).toLowerCase().includes(q) - name(a).toLowerCase().includes(q)) || b.n - a.n).slice(0, 25);
+  R.innerHTML = hits.map(t => `<div data-node="${t.id}">${esc(name(t))} <span class="n">${fmt(t.n)}</span><small>${esc(ancestry(t).slice(1, -1).map(name).join(" › ") || "Top level")}</small></div>`).join("") || '<div class="muted">No topic matches</div>';
+  R.style.display = "block";
+};
+$("#results").onclick = e => { const d = e.target.closest("[data-node]"); if (d) { $("#results").style.display = "none"; $("#search").value = ""; goTo(T[+d.dataset.node]); } };
+
+// ---- colour-by & lasso ----------------------------------------------------------------------------------------------
+$("#colorby").onclick = e => { const v = e.target.closest("button")?.dataset.v; if (!v) return; mode = v;
+  document.querySelectorAll("#colorby button").forEach(b => b.classList.toggle("on", b.dataset.v === v)); paint(); };
+let tool = "pan";
+const lasso = $("#lasso"), ctx = lasso.getContext("2d");
+const setTool = v => { tool = v; $("#map").classList.toggle("lassoing", v === "lasso"); document.querySelectorAll("#tool button").forEach(b => b.classList.toggle("on", b.dataset.v === v)); };
+$("#tool").onclick = e => { const v = e.target.closest("button")?.dataset.v; if (v) setTool(v); };
+addEventListener("keydown", e => {
+  if (e.target.matches("input")) return;
+  if (e.key === "l") setTool(tool === "lasso" ? "pan" : "lasso");
+  if (e.key === "u") goUp();
+  if (e.key === "Escape") { setTool("pan"); clearSelection(); }
+});
+let path = null;
+lasso.onpointerdown = e => { const r = lasso.getBoundingClientRect(); lasso.width = r.width; lasso.height = r.height; path = [[e.clientX - r.left, e.clientY - r.top]]; lasso.setPointerCapture(e.pointerId); };
+lasso.onpointermove = e => {
+  if (!path) return; const r = lasso.getBoundingClientRect(); path.push([e.clientX - r.left, e.clientY - r.top]);
+  ctx.clearRect(0, 0, lasso.width, lasso.height); ctx.beginPath(); path.forEach(([x, y], j) => j ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath();
+  ctx.fillStyle = "rgba(244,224,77,.10)"; ctx.fill(); ctx.strokeStyle = "#f4e04d"; ctx.lineWidth = 1.5; ctx.stroke();
+};
+lasso.onpointerup = e => {
+  const p = path; path = null; ctx.clearRect(0, 0, lasso.width, lasso.height);
+  if (!p || p.length < 3) return;
+  const found = graph.findPointsInPolygon(p).filter(i => groupOf[i] >= 0 && visible[status[i]]);  // only what the map shows, inside the group
+  const add = e.shiftKey && selection ? selection.idx : [];
+  setSelection(add.length ? [...new Set([...add, ...found])] : found, add.length ? "Lasso selection (added to)" : "Lasso selection");
+};
+let mouse = [0, 0];
+$("#map").addEventListener("mousemove", e => { const r = $("#map").getBoundingClientRect(); mouse = [e.clientX - r.left, e.clientY - r.top]; });
+function showHover(i) {
+  const h = $("#hover"), t = T[leafOf[fine[i]]], v = status[i];
+  h.innerHTML = `<b>${esc(name(t))}</b><br><span class="${ST.cls[v]}">${ST.names[v]}</span>${why(i) ? `<br><span class="muted">${why(i)}</span>` : ""}<br><span class="muted">${esc(meta.agencies[agency[i]])}, ${kind[i] ? "grant" : "contract"}</span>`;
+  h.style.display = "block"; h.style.left = mouse[0] + 14 + "px"; h.style.top = mouse[1] + 14 + "px";
+}
+
+// ---- right panel ----------------------------------------------------------------------------------------------
+function setSelection(idx, title) {
+  selection = { idx, title }; current = null; outline();
+  graph.setConfigPartial({ highlightedPointIndices: idx }); graph.render(); renderGroupPanel(idx, title, true);
+}
+function clearSelection() {
+  selection = null; current = null; outline(); graph.setConfigPartial({ highlightedPointIndices: undefined }); graph.render(); renderNodePanel();
+}
+function renderNodePanel() { if (cur.parent < 0) renderHome(); else renderGroupPanel(members(cur), name(cur), false); }
+function counts(idx, key, n) { const c = new Uint32Array(n); for (const i of idx) c[key(i)]++; return [...c].map((v, k) => [k, v]).filter(x => x[1]).sort((a, b) => b[1] - a[1]); }
+function bars(rows, total, label, attr) {
+  return `<div class="bars">${rows.map(([k, v]) => `<div ${attr ? `data-${attr}="${k}"` : ""}><span>${esc(label(k))}<i style="width:${(100 * v / rows[0][1]).toFixed(1)}%"></i></span><span class="n">${fmt(v)} (${pct(v, total)})</span></div>`).join("")}</div>`;
+}
+let listFilter = "all";
+function renderGroupPanel(idx, title, isSelection) {
+  const n = idx.length, ft = counts(idx, i => fine[i], FINE).slice(0, 10), ag = counts(idx, i => agency[i], meta.agencies.length).slice(0, 6);
+  $("#panel").innerHTML = `
+    <div class="row" style="justify-content:space-between;align-items:flex-start"><h2 style="margin-top:0">${esc(title)}</h2>${isSelection ? '<button class="btn" id="clear">Clear</button>' : ""}</div>
+    <p><b>${fmt(n)}</b> awards${isSelection ? " selected" : " in this group"}.</p>
+    ${n ? `
+    <h2>Tag these ${fmt(n)}</h2>
+    <div class="row"><input class="tagin" id="tagin" placeholder="one or more tags, comma separated" list="taglist"><button class="btn primary" id="tagadd">Add</button><button class="btn" id="tagrm">Remove</button></div>
+    <div class="row" style="margin-top:10px"><button class="btn" id="expsel">Export as CSV</button>${isSelection && n >= 30 && !STATIC ? '<button class="btn" id="splitsel">Split into sub-topics</button>' : ""}</div>
+    <h2>Awards</h2>
+    <div class="chips" id="lf">${[["all", "All"], ["3", "New leads"], ["4", "AI, listed provider"], ["5", "AI, in report"], ["6", "Unconfirmed"], ["2", "Unclear"], ["1", "Not AI"]].map(([v, l]) => `<button data-f="${v}" class="${v === listFilter ? "on" : ""}">${l}</button>`).join("")}</div>
+    <div class="list" id="alist">Loading…</div>
+    <h2>Finest topics in here</h2>${bars(ft, n, k => name(T[leafOf[k]]), "leaf")}
+    <h2>Agencies</h2>${bars(ag, n, k => meta.agencies[k])}` : ""}
+    ${tagSection()}`;
+  $("#clear") && ($("#clear").onclick = clearSelection);
+  wireTags(); if (!n) return;
+  $("#panel").querySelectorAll("[data-leaf]").forEach(d => d.onclick = () => goTo(T[leafOf[+d.dataset.leaf]]));
+  $("#tagadd").onclick = () => tagOp("add", idx); $("#tagrm").onclick = () => tagOp("remove", idx);
+  $("#expsel").onclick = () => exportCSV({ idx: Array.from(idx) });
+  $("#splitsel") && ($("#splitsel").onclick = splitSelection);
+  $("#lf").onclick = e => { if (!e.target.dataset.f) return; listFilter = e.target.dataset.f;
+    document.querySelectorAll("#lf button").forEach(b => b.classList.toggle("on", b === e.target)); listAwards(idx); };
+  listAwards(idx);
+}
+async function listAwards(idx) {
+  // 50 awards spread evenly through the group (index order would show only the first agency files)
+  const pool = listFilter === "all" ? idx : Array.from(idx).filter(i => status[i] === +listFilter);
+  const pick = sampleIdx(pool, 50);
+  const el = $("#alist"); if (!pick.length) { el.innerHTML = '<p class="muted">None in this group.</p>'; return; }
+  const rows = await Promise.all(pick.map(i => getAward(i)));
+  if (!document.body.contains(el)) return;
+  el.innerHTML = rows.map(a => `<div data-i="${a.idx}"><i class="dot" style="background:${css(ST.colors[status[a.idx]])}"></i><span><b>${esc(a.recipient)}</b> <span class="muted">${esc(a.award_id)}</span><br><span class="muted">${esc((a.descriptions[0] || "").slice(0, 140))}</span></span></div>`).join("");
+  el.onclick = e => { const d = e.target.closest("[data-i]"); if (d) openAward(+d.dataset.i, true); };
+}
+async function openAward(i, fromList) {
+  current = i; outline(); $("#right").scrollTop = 0;
+  if (!fromList) graph.zoomToPointByIndex(i, 500, Math.max(graph.getZoomLevel(), baseZoom * 6));
+  const a = await getAward(i), leaf = T[leafOf[fine[i]]], v = status[i];
+  $("#panel").innerHTML = `
+    <div class="row" style="justify-content:space-between;align-items:flex-start"><h2 style="margin-top:0">${esc(a.recipient)}</h2><button class="btn" id="back">Back</button></div>
+    <p class="${ST.cls[v]}" style="margin:0 0 10px"><i class="dot" style="background:${css(ST.colors[v])}"></i> ${ST.names[v]}${why(i) ? `<br><span class="muted">${why(i)}</span>` : ""}</p>
+    <dl><dt>Award</dt><dd><a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.award_id)}</a> (${esc(a.kind)})</dd>
+      <dt>Agency</dt><dd>${esc(a.agency)}</dd><dt>Recipient UEI</dt><dd>${esc(a.uei)}</dd>
+      <dt>Topic</dt><dd class="path">${ancestry(leaf).slice(1).map(t => `<a data-node="${t.id}">${esc(name(t))}</a>`).join(" › ")}</dd></dl>
+    <h2>Tags</h2><div id="atags">${a.tags.map(t => `<span class="tag">${esc(t)}<button data-t="${esc(t)}" aria-label="Remove tag ${esc(t)}">×</button></span>`).join("") || '<span class="muted">None yet</span>'}</div>
+    <div class="row" style="margin-top:8px"><input class="tagin" id="tagin" placeholder="add tags, comma separated" list="taglist"><button class="btn primary" id="tagadd">Add</button></div>
+    <h2>Descriptions <span class="muted" style="font-weight:400">(${a.descriptions.length})</span></h2>
+    ${a.descriptions.map(d => `<div class="desc">${esc(d)}</div>`).join("")}
+    <h2>USAspending record</h2><div id="usa"><button class="btn" id="loadusa">Load amounts, dates, codes and place</button></div>
+    ${tagSection()}`;
+  $("#back").onclick = () => { current = null; outline(); selection ? renderGroupPanel(selection.idx, selection.title, true) : renderNodePanel(); };
+  $("#panel .path").onclick = e => { const d = e.target.closest("[data-node]"); if (d) goTo(T[+d.dataset.node]); };
+  $("#tagadd").onclick = () => tagOp("add", [i]);
+  $("#atags").onclick = e => e.target.dataset.t && tagOp("remove", [i], [e.target.dataset.t]);
+  $("#loadusa").onclick = () => loadUSA(a.key);
+  wireTags();
+}
+async function loadUSA(key) {
+  const el = $("#usa"); el.textContent = "Loading from api.usaspending.gov…";
+  try {
+    const r = await fetch(`https://api.usaspending.gov/api/v2/awards/${encodeURIComponent(key)}/`); if (!r.ok) throw new Error(r.status);
+    const d = await r.json(), m = v => v == null ? "" : "$" + Math.round(v).toLocaleString("en-US"), pop = d.place_of_performance || {}, ls = d.latest_transaction_contract_data || {};
+    const rows = [["Obligated (total)", m(d.total_obligation)], ["Award amount / ceiling", m(d.base_and_all_options_value ?? d.total_funding_amount)],
+      ["Period", [d.period_of_performance?.start_date, d.period_of_performance?.end_date].filter(Boolean).join(" to ")],
+      ["Awarding office", [d.awarding_agency?.subtier_agency?.name, d.awarding_agency?.office_agency_name].filter(Boolean).join(", ")],
+      ["Funding agency", d.funding_agency?.toptier_agency?.name], ["NAICS", d.naics_hierarchy?.base_code ? `${d.naics_hierarchy.base_code.code} ${d.naics_hierarchy.base_code.description}` : ""],
+      ["PSC", d.psc_hierarchy?.base_code ? `${d.psc_hierarchy.base_code.code} ${d.psc_hierarchy.base_code.description}` : ""],
+      ["CFDA", (d.cfda_info || []).map(c => `${c.cfda_number} ${c.cfda_title}`).join("; ")],
+      ["Competition", ls.extent_competed_description], ["Offers", ls.number_of_offers_received], ["Parent", d.parent_award?.piid || d.parent_award?.generated_unique_award_id],
+      ["Place", [pop.city_name, pop.state_code, pop.country_name].filter(Boolean).join(", ")], ["Recipient parent", d.recipient?.parent_recipient_name]].filter(r => r[1]);
+    el.innerHTML = `<dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>`;
+  } catch (e) { el.innerHTML = `<p class="muted">Could not load (${esc(e.message)}). The award page link above still works.</p>`; }
+}
+
+// ---- tags -----------------------------------------------------------------------------------------------------
+let tagIndex = {};
+async function refreshTags() { tagIndex = STATIC ? Object.fromEntries(localTags()) : await (await fetch("api/tags")).json(); }
+function tagSection() {
+  const names = Object.keys(tagIndex).sort();
+  return `<datalist id="taglist">${names.map(t => `<option value="${esc(t)}">`).join("")}</datalist>
+    <h2>Your tags</h2>${names.length ? `<div id="tags">${names.map(t => `<label><input type="checkbox" value="${esc(t)}"> <span class="tag">${esc(t)}</span> <span class="n">${fmt(tagIndex[t].length)}</span></label>`).join("")}</div>
+    <div class="row" style="margin-top:8px"><button class="btn" id="tshow">Show on map</button><button class="btn" id="texp">Export</button>
+    <select id="tmode" class="btn"><option value="any">with any checked tag</option><option value="all">with all checked tags</option></select></div>` : '<p class="muted">No tags yet. Select awards with the lasso or a topic, then add a tag.</p>'}`;
+}
+const checked = () => [...document.querySelectorAll("#tags input:checked")].map(c => c.value);
+function tagged(tags, mode) {
+  if (mode === "all") { const sets = tags.map(t => new Set(tagIndex[t])); return [...sets[0]].filter(i => sets.every(s => s.has(i))); }
+  return [...new Set(tags.flatMap(t => tagIndex[t]))];
+}
+function wireTags() {
+  const show = $("#tshow"), ex = $("#texp"); if (!show) return;
+  show.onclick = () => { const t = checked(); if (!t.length) return; const m = $("#tmode").value; if (cur.parent >= 0) goTo(T[0]);
+    setSelection(tagged(t, m), `Tagged: ${t.join(m === "all" ? " and " : " or ")}`); };
+  ex.onclick = () => { const t = checked(); if (t.length) exportCSV({ tags: t, mode: $("#tmode").value }); };
+}
+async function tagOp(op, idx, tags) {
+  tags ??= $("#tagin").value.split(",").map(s => s.trim()).filter(Boolean); if (!tags.length) return;
+  $("#status").textContent = `Saving ${tags.length === 1 ? "tag" : tags.length + " tags"} on ${fmt(idx.length)} awards…`;
+  if (STATIC) {  // tags stay in this browser
+    const all = Object.fromEntries(localTags());
+    for (const t of tags) { const s = new Set(all[t] || []); for (const i of idx) op === "add" ? s.add(i) : s.delete(i); s.size ? all[t] = [...s] : delete all[t]; }
+    try { localStorage.setItem("award-map-tags", JSON.stringify(all)); } catch { $("#status").textContent = "This browser does not allow saving tags."; }
+  } else await fetch("api/tags", { method: "POST", body: JSON.stringify({ [op]: tags, idx: Array.from(idx) }) });
+  await refreshTags(); $("#status").textContent = "";
+  if (idx.length === 1 && current === idx[0]) openAward(current, true);
+  else if (selection) renderGroupPanel(selection.idx, selection.title, true); else renderNodePanel();
+}
+async function exportCSV(body) {
+  $("#status").textContent = "Preparing CSV…";
+  const b = STATIC ? await exportStatic(body) : await (await fetch("api/export", { method: "POST", body: JSON.stringify(body) })).blob();
+  if (!b) return;
+  Object.assign(document.createElement("a"), { href: URL.createObjectURL(b), download: "awards_export.csv" }).click();
+  $("#status").textContent = "";
+}
+const REVIEW_NAMES = ["not looked at", "not AI", "unclear", "AI, new lead", "AI, listed provider, not in report", "AI, in our report", "in our report, not confirmed"];
+async function exportStatic(body) {  // same columns as server.py's export
+  const idx = body.idx || tagged(body.tags, body.mode), MAX = 20000;
+  if (idx.length > MAX) { $("#status").textContent = `Export is limited to ${fmt(MAX)} awards here. Select fewer.`; return null; }
+  const q = v => `"${String(v ?? "").replace(/"/g, '""')}"`, rows = [["idx", "tags", "review", "role", "jev_ai_pct", "topic_id", "topic", "award_id", "recipient", "uei", "agency", "kind", "url", "description"]];
+  for (const i of [...idx].sort((a, b) => a - b)) {
+    const a = await getAward(i), leaf = T[leafOf[fine[i]]];
+    rows.push([i, a.tags.join("; "), REVIEW_NAMES[status[i]], ROLE[role[i]], pai[i] === 255 ? "" : pai[i], fine[i], name(leaf), a.award_id, a.recipient, a.uei, a.agency, a.kind, a.url, a.descriptions.join(" | ")]);
+  }
+  return new Blob([rows.map(r => r.map(q).join(",")).join("\n")], { type: "text/csv" });
+}
+// the home panel shows METHODOLOGY.md, so the app and the written method never disagree
+const methodHTML = Promise.all([import("https://cdn.jsdelivr.net/npm/marked@12/lib/marked.esm.js"), fetch("METHODOLOGY.md").then(r => r.text())])
+  .then(([m, md]) => m.marked.parse(md)).catch(() => '<p>The methodology text did not load. Read METHODOLOGY.md next to this page.</p>');
+async function renderHome() {
+  $("#panel").innerHTML = `<div class="method">Loading the methodology…</div>${tagSection()}`; wireTags();
+  const html = await methodHTML; if (cur.parent < 0 && !selection && current == null) $("#panel .method").innerHTML = html;
+}
+await refreshTags();
+goTo(T[0], false);
+</script>
+</body>
+</html>
