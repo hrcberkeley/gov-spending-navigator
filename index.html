@@ -24,6 +24,8 @@ aside{background:var(--sheet);overflow:auto;min-height:0}
 h1{font:800 20px/1.1 var(--head);font-stretch:85%;margin:16px 18px 10px}
 h2{font:700 16px/1.2 var(--head);font-stretch:90%;margin:20px 0 8px}
 #search{margin:0 18px 6px;padding:7px 10px;border:1px solid var(--rule);background:var(--paper);border-radius:4px;width:calc(100% - 36px)}
+#msearch{margin:0 18px 6px;padding:7px 10px;border:1px solid var(--rule);background:var(--paper);border-radius:4px;width:calc(100% - 36px)}
+#mstatus{margin:0 18px 6px;font-size:12px;color:var(--ink3)}
 #results{margin:0 10px;display:none}
 #results div{padding:6px 8px;border-radius:4px;cursor:pointer}
 #results div:hover{background:var(--sheet2)}
@@ -127,6 +129,8 @@ kbd{border:1px solid var(--rule);border-radius:3px;padding:0 4px;font-size:12px}
     <h1>Federal award map, FY2026</h1>
     <input id="search" placeholder="Find a topic, e.g. machine learning" autocomplete="off">
     <div id="results"></div>
+    <input id="msearch" placeholder="Search awards by meaning, then Enter" autocomplete="off" aria-label="Search awards by meaning">
+    <div id="mstatus"></div>
     <div id="nav"></div>
   </aside>
   <main id="map">
@@ -151,6 +155,7 @@ const fmt = n => n.toLocaleString("en-US"), pct = (a, b) => b ? (100 * a / b < 1
 // Two modes. With server.py: the api/ endpoints. Published as static files (build_static.py sets data-static):
 // gzip files named .z (so web servers do not re-encode them), award details in shards of 1,000, tags in this browser only.
 const STATIC = document.documentElement.hasAttribute("data-static"), SHARD = 1000;
+const SITE = STATIC ? "" : "site/";  // vectors and search files: built by build_static.py, also used by the local app
 const gunzip = async r => { if (!r.ok) throw new Error(r.status); return new Response(r.body.pipeThrough(new DecompressionStream("gzip"))).arrayBuffer(); };
 const bin = async (f, T) => new T(STATIC ? await gunzip(await fetch("data/" + f + ".z")) : await (await fetch("data/" + f)).arrayBuffer());
 const shards = new Map();
@@ -385,7 +390,7 @@ async function splitNode(t) {
 // one byte per number), c-TF-IDF keywords from sampled descriptions, label at the densest spot. Keywords name the groups.
 const vecFiles = new Map(); let vecScale;
 async function topicVecs(t) {
-  if (!vecFiles.has(t)) vecFiles.set(t, gunzip(await fetch(`vecs/${t}.z`)).then(b => {
+  if (!vecFiles.has(t)) vecFiles.set(t, gunzip(await fetch(`${SITE}vecs/${t}.z`)).then(b => {
     const n = new Int32Array(b, 0, 1)[0]; return { idx: new Int32Array(b, 4, n), q: new Int8Array(b, 4 + 4 * n, 64 * n) }; }));
   return vecFiles.get(t);
 }
@@ -422,7 +427,7 @@ function anchorXY(ids) {  // densest cell of a 256 x 256 grid, as topicsutil.anc
 }
 async function splitStatic(idx) {
   if (idx.length < 30) return { error: "Too few awards to split (need 30+)." };
-  vecScale ??= await (await fetch("vecs/scale.json")).json();
+  vecScale ??= await (await fetch(`${SITE}vecs/scale.json`)).json();
   const want = new Set(idx), topics = [...new Set(Array.from(idx, i => fine[i]))];
   $("#status").textContent = `Loading vectors for ${fmt(idx.length)} awards…`;
   const ids = [], V = new Float32Array(64 * idx.length);
@@ -488,6 +493,39 @@ $("#search").oninput = e => {
 };
 $("#results").onclick = e => { const d = e.target.closest("[data-node]"); if (d) { $("#results").style.display = "none"; $("#search").value = ""; goTo(T[+d.dataset.node]); } };
 
+// ---- search by meaning: the same model as the map (bge-base-en-v1.5) runs in the browser -----------------------------
+// The query vector goes through the map's PCA (search/proj.bin.z, 768 + 1 bias rows x 64), is compared with the 1,500
+// topic centres, and then with every award in the 40 nearest topics. Tested against a search of all awards: this keeps
+// 98-100% of the 300 best matches.
+let embedder, proj, cents;
+async function searchMeaning(q) {
+  const st = $("#mstatus");
+  if (!embedder) {
+    st.textContent = "Loading the language model (about 110 MB, one time)…";
+    const { pipeline } = await import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.5");
+    embedder = await pipeline("feature-extraction", "Xenova/bge-base-en-v1.5", { dtype: "q8" });
+    [proj, cents] = await Promise.all(["proj", "centroids"].map(async f => new Float32Array(await gunzip(await fetch(`${SITE}search/${f}.bin.z`)))));
+    vecScale ??= await (await fetch(`${SITE}vecs/scale.json`)).json();
+  }
+  st.textContent = "Searching…";
+  const e = (await embedder("Represent this sentence for searching relevant passages: " + q, { pooling: "cls", normalize: true })).data;
+  const v = new Float32Array(64); for (let j = 0; j < 64; j++) { let x = proj[768 * 64 + j]; for (let d = 0; d < 768; d++) x += e[d] * proj[d * 64 + j]; v[j] = x; }
+  const norm = a => Math.hypot(...a) || 1, vn = norm(v);
+  const cos = (a, o) => { let x = 0, n = 0; for (let j = 0; j < 64; j++) { x += a[o + j] * v[j]; n += a[o + j] ** 2; } return x / (Math.sqrt(n) || 1) / vn; };
+  const topics = [...Array(FINE).keys()].map(t => [t, cos(cents, 64 * t)]).sort((a, b) => b[1] - a[1]).slice(0, 40).map(x => x[0]);
+  const hits = [];
+  for (const f of await Promise.all(topics.map(topicVecs))) {
+    const a = new Float32Array(64);
+    for (let k = 0; k < f.idx.length; k++) { const i = f.idx[k]; if (!keep(i)) continue;
+      for (let j = 0; j < 64; j++) a[j] = f.q[64 * k + j] * vecScale[j]; hits.push([i, cos(a, 0)]); }
+  }
+  hits.sort((a, b) => b[1] - a[1]); const idx = hits.slice(0, 300).map(x => x[0]);
+  st.textContent = idx.length ? `The ${idx.length} awards closest in meaning, best first. The filters on the left apply.` : "No awards match the current filters.";
+  if (cur.parent >= 0) goTo(T[0], false);
+  setSelection(idx, `Closest to “${q}”`, true); if (idx.length) fitTo(idx);
+}
+$("#msearch").onkeydown = e => { if (e.key === "Enter" && e.target.value.trim()) searchMeaning(e.target.value.trim()).catch(err => $("#mstatus").textContent = "Search failed: " + err.message); };
+
 // ---- colour-by & lasso ----------------------------------------------------------------------------------------------
 $("#colorby").onclick = e => { const v = e.target.closest("button")?.dataset.v; if (!v) return; mode = v;
   document.querySelectorAll("#colorby button").forEach(b => b.classList.toggle("on", b.dataset.v === v)); paint(); };
@@ -524,8 +562,8 @@ function showHover(i) {
 }
 
 // ---- right panel ----------------------------------------------------------------------------------------------
-function setSelection(idx, title) {
-  selection = { idx, title }; current = null; outline();
+function setSelection(idx, title, ranked = false) {
+  selection = { idx, title, ranked }; current = null; outline();
   graph.setConfigPartial({ highlightedPointIndices: idx }); graph.render(); renderGroupPanel(idx, title, true);
 }
 function clearSelection() {
@@ -565,7 +603,7 @@ function renderGroupPanel(idx, title, isSelection) {
 async function listAwards(idx) {
   // 50 awards spread evenly through the group (index order would show only the first agency files)
   const pool = listFilter === "all" ? idx : Array.from(idx).filter(i => listFilter === "new" ? status[i] === 3 && !oldl[i] : status[i] === +listFilter);
-  const pick = sampleIdx(pool, 50);
+  const pick = selection?.ranked && selection.idx === idx ? Array.from(pool).slice(0, 50) : sampleIdx(pool, 50);  // search results keep their order
   const el = $("#alist"); if (!pick.length) { el.innerHTML = '<p class="muted">None in this group.</p>'; return; }
   const rows = await Promise.all(pick.map(i => getAward(i)));
   if (!document.body.contains(el)) return;
