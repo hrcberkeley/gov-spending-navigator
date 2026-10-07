@@ -248,13 +248,17 @@ function computeGroups(t) {
   else t.children.forEach((c, ci) => { for (const l of leavesUnder(T[c])) map[l] = ci; });
   for (let i = 0; i < N; i++) groupOf[i] = map[fine[i]];
 }
+const shownFine = new Uint32Array(FINE);  // awards the map shows (ticked categories, agency) per finest topic
+const shownIn = t => t.idx ? Array.from(t.idx).filter(shown).length : leavesUnder(t).reduce((a, l) => a + shownFine[l], 0);
 function paint() {
+  shownFine.fill(0);
   if (mode === "agency") {  // the 9 largest agencies inside the group get colours; the rest share grey
     const c = new Uint32Array(256); for (let i = 0; i < N; i++) if (groupOf[i] >= 0) c[agency[i]]++;
     agencyRank = new Int16Array(256).fill(9); [...c].map((v, k) => [k, v]).filter(x => x[1]).sort((a, b) => b[1] - a[1]).slice(0, 9).forEach(([k], r) => agencyRank[k] = r);
   }
   for (let i = 0; i < N; i++) {
     const g = groupOf[i]; let rgb = OUT, a = OUT_A, s = 1.5;
+    if (shown(i)) shownFine[fine[i]]++;
     if (!shown(i)) { colorBuf[4*i+3] = 0; sizeBuf[i] = 0; continue; }
     if (g >= 0) {
       if (mode === "topic") { rgb = PAL[g % PAL.length]; a = 0.9; s = 2; }
@@ -480,8 +484,9 @@ $("#search").oninput = e => {
   const q = e.target.value.trim().toLowerCase(), R = $("#results");
   if (q.length < 2) { R.style.display = "none"; return; }
   const hits = T.filter(t => t.parent >= 0 && (name(t).toLowerCase().includes(q) || t.terms.some(w => w.includes(q))))
+    .map(t => (t.shown = shownIn(t), t)).filter(t => t.shown)
     .sort((a, b) => (name(b).toLowerCase().includes(q) - name(a).toLowerCase().includes(q)) || b.n - a.n).slice(0, 25);
-  R.innerHTML = hits.map(t => `<div data-node="${t.id}">${esc(name(t))} <span class="n">${fmt(t.n)}</span><small>${esc(ancestry(t).slice(1, -1).map(name).join(" › ") || "Top level")}</small></div>`).join("") || '<div class="muted">No topic matches</div>';
+  R.innerHTML = hits.map(t => `<div data-node="${t.id}">${esc(name(t))} <span class="n">${fmt(t.shown)}</span><small>${esc(ancestry(t).slice(1, -1).map(name).join(" › ") || "Top level")}</small></div>`).join("") || '<div class="muted">No topic matches among the awards on the map</div>';
   R.style.display = "block";
 };
 $("#results").onclick = e => { const d = e.target.closest("[data-node]"); if (d) { $("#results").style.display = "none"; $("#search").value = ""; goTo(T[+d.dataset.node]); } };
@@ -505,15 +510,18 @@ async function searchMeaning(q) {
   const v = new Float32Array(64); for (let j = 0; j < 64; j++) { let x = proj[768 * 64 + j]; for (let d = 0; d < 768; d++) x += e[d] * proj[d * 64 + j]; v[j] = x; }
   const norm = a => Math.hypot(...a) || 1, vn = norm(v);
   const cos = (a, o) => { let x = 0, n = 0; for (let j = 0; j < 64; j++) { x += a[o + j] * v[j]; n += a[o + j] ** 2; } return x / (Math.sqrt(n) || 1) / vn; };
-  const topics = [...Array(FINE).keys()].map(t => [t, cos(cents, 64 * t)]).sort((a, b) => b[1] - a[1]).slice(0, 40).map(x => x[0]);
+  // the 40 nearest topics that have awards on the map; with narrow filters, more topics until 3,000 candidates (max 300)
+  const ranked = [...Array(FINE).keys()].filter(t => shownFine[t]).map(t => [t, cos(cents, 64 * t)]).sort((a, b) => b[1] - a[1]);
+  const topics = []; let cand = 0;
+  for (const [t] of ranked) { if (topics.length >= 300 || (topics.length >= 40 && cand >= 3000)) break; topics.push(t); cand += shownFine[t]; }
   const hits = [];
   for (const f of await Promise.all(topics.map(topicVecs))) {
     const a = new Float32Array(64);
-    for (let k = 0; k < f.idx.length; k++) { const i = f.idx[k]; if (!keep(i)) continue;
+    for (let k = 0; k < f.idx.length; k++) { const i = f.idx[k]; if (!shown(i)) continue;
       for (let j = 0; j < 64; j++) a[j] = f.q[64 * k + j] * vecScale[j]; hits.push([i, cos(a, 0)]); }
   }
   hits.sort((a, b) => b[1] - a[1]); const idx = hits.slice(0, 300).map(x => x[0]);
-  st.textContent = idx.length ? `The ${idx.length} awards closest in meaning, best first. The filters on the left apply.` : "No awards match the current filters.";
+  st.textContent = idx.length ? `The ${idx.length} awards closest in meaning, best first, among the awards on the map.` : "No awards on the map match. Tick more categories or change the agency.";
   if (cur.parent >= 0) goTo(T[0], false);
   setSelection(idx, `Closest to “${q}”`, true); if (idx.length) fitTo(idx);
 }
