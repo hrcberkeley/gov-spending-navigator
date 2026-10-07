@@ -34,8 +34,6 @@ In this method, we use the starting list for two purposes only:
 1. The list shows the type of description that AI awards have. We use it to find similar awards.
 2. The 365 awards that were examined one by one are a test set for the decision model.
 
-On the map, the awards of the starting list have the label "in the old list".
-
 ## 4. The map of all awards
 
 We put all records on a map. On this map, awards with similar descriptions are near each other.
@@ -119,16 +117,16 @@ we did not examine are related to AI. This is a maximum of approximately 700 awa
 
 Each record has one of these statuses:
 
-| Status | Records | In the old list | Not in the old list |
-|---|---|---|---|
-| AI-related | 18,001 | 10,147 | 7,854 |
-| Needs a look | 72,017 | 4,454 | 67,563 |
-| Not AI | 521,326 | 0 | 521,326 |
-| Not looked at | 4,578,056 | 0 | 4,578,056 |
+| Status | Records |
+|---|---|
+| AI-related | 18,001 |
+| Needs a look | 72,017 |
+| Not AI | 521,326 |
+| Not looked at | 4,578,056 |
 
 "Needs a look" has two causes:
 
-1. The award is in the old list, but Jev did not identify it as AI-related (4,454 records).
+1. The award is in the starting list (section 3), but Jev did not identify it as AI-related (4,454 records).
 2. The description does not give sufficient information (67,563 records). Most of these records are
    administrative changes with a very short description.
 
@@ -136,9 +134,8 @@ Each record has one of these statuses:
 
 1. Jev reads only the description. It does not read the amount, the recipient, or other sources.
 2. A person must examine the records with the status "Needs a look".
-3. A person must examine a random sample of the 7,854 AI-related records that are not in the old list.
-   This sample will show how frequently Jev is correct about new awards. For example, a group of approximately
-   470 of these records is about Microsoft licences. Some of these records are possibly resale and not AI work.
+3. A person must examine a random sample of the AI-related records. This sample will show how frequently Jev
+   is correct. For example, a group of approximately 470 AI-related records is about Microsoft licences. Some of these records are possibly resale and not AI work.
 4. The data does not include all subcontracts, all subgrants, or the members of consortia that get "other
    transaction" agreements. Defense data from July to September 2026 is possibly not complete yet.
 5. The positions on the map are correct only for near awards. A large distance between two groups on the

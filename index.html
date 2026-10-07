@@ -38,7 +38,7 @@ h2{font:700 16px/1.2 var(--head);font-stretch:90%;margin:20px 0 8px}
 #head{padding:6px 18px 12px;border-bottom:1px solid var(--rule)}
 #head h2{font-size:22px;margin:4px 0 2px;font-stretch:85%;line-height:1.1}
 #head .kw{color:var(--ink3);font-size:12.5px;margin:2px 0 10px}
-.mix{display:grid;gap:3px}
+.mix{display:grid;grid-template-columns:minmax(0,1fr);gap:3px}
 .mix button{display:grid;grid-template-columns:12px 1fr auto;gap:8px;align-items:center;background:none;border:0;padding:3px 6px;margin:0 -6px;border-radius:4px;text-align:left;cursor:pointer;font-size:13px}
 .mix button:hover{background:var(--sheet2)}
 .mix .grp{font-size:11.5px;color:var(--ink3);margin:6px 0 0}
@@ -57,7 +57,7 @@ h2{font:700 16px/1.2 var(--head);font-stretch:90%;margin:20px 0 8px}
 #kids .sub b{font-weight:600}
 #kids .more{color:var(--ink3);font-size:12px;font-weight:400}
 .b-ai{color:var(--ai)} .b-listed{color:var(--listed)} .b-look{color:#f783ac} .b-not{color:var(--ink3)}
-.filters{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px} .filters select{max-width:100%}
+.filters{display:grid;gap:6px;margin-top:8px} .filters select{width:100%;min-width:0;text-overflow:ellipsis}
 .mix .row5{display:grid;grid-template-columns:18px 1fr auto;align-items:center;gap:2px}
 .mix .row5 input{accent-color:var(--ink2);margin:0}
 .mix .only{background:none;border:0;color:var(--ink3);font-size:11.5px;padding:0 4px;margin-left:6px;cursor:pointer;visibility:hidden}
@@ -140,7 +140,6 @@ kbd{border:1px solid var(--rule);border-radius:3px;padding:0 4px;font-size:12px}
     <div id="bar">
       <div class="seg" id="tool"><button data-v="pan" class="on">Pan</button><button data-v="lasso">Lasso <kbd>L</kbd></button></div>
       <div class="seg" id="colorby"><button data-v="topic" class="on">Sub-topics</button><button data-v="status">AI review</button><button data-v="kind">Type</button><button data-v="agency">Agency</button></div>
-      <label class="toggle"><input type="checkbox" id="ring"> Ring awards from the old list</label>
       <div id="legend"></div>
     </div>
     <div id="hover"></div>
@@ -167,9 +166,9 @@ async function getAward(i) {
   return { idx: i, key, uei, recipient, kind, agency, award_id, descriptions, url: `https://www.usaspending.gov/award/${encodeURIComponent(key)}/`, tags: localTags().filter(([t, ids]) => ids.includes(i)).map(([t]) => t) };
 }
 const localTags = () => { try { return Object.entries(JSON.parse(localStorage.getItem("award-map-tags") || "{}")); } catch { return []; } };
-const [meta, labels, xy, fine, agency, kind, status, role, pai, oldl] = await Promise.all([
+const [meta, labels, xy, fine, agency, kind, status, role, pai] = await Promise.all([
   fetch("data/meta.json").then(r => r.json()), fetch("data/labels.json").then(r => r.ok ? r.json() : {}).catch(() => ({})),
-  bin("xy.bin", Float32Array), bin("fine.bin", Uint16Array), bin("agency.bin", Uint8Array), bin("kind.bin", Uint8Array), bin("review.bin", Uint8Array), bin("role.bin", Uint8Array), bin("pai.bin", Uint8Array), bin("oldlist.bin", Uint8Array)]);
+  bin("xy.bin", Float32Array), bin("fine.bin", Uint16Array), bin("agency.bin", Uint8Array), bin("kind.bin", Uint8Array), bin("review.bin", Uint8Array), bin("role.bin", Uint8Array), bin("pai.bin", Uint8Array)]);
 const N = meta.n, SPACE = 8192, FINE = meta.fine.length, T = meta.tree;
 
 // ---- topic tree ----------------------------------------------------------------------------------------------
@@ -207,17 +206,16 @@ const hex = h => [1, 3, 5].map(k => parseInt(h.slice(k, k + 2), 16) / 255);
 const PAL = ["#6ea8fe","#f4a259","#5cc8a1","#e5707e","#b392f0","#9bd164","#f08cc0","#d4b483","#62d0e3","#a8b0c4"].map(hex);
 const css = c => `rgb(${c.map(v => Math.round(v * 255)).join(",")})`;
 // review.bin (review_status.py): one decision per award. 0 not looked at (outside scope), 1 not AI, 2 needs a look,
-// 3 AI-related. oldlist.bin marks awards from the earlier list of AI awards; it is a filter, not a category.
+// 3 AI-related.
 const ST = { names: ["Not looked at", "Not AI", "Needs a look", "AI-related"],
   colors: ["#3d4463", "#6b7290", "#f783ac", "#ffd43b"].map(hex), alpha: [0.25, 0.35, 0.8, 1], size: [1.4, 1.6, 3, 5],
   cls: ["b-not", "b-not", "b-look", "b-ai"] };
 const ROLE = ["", "develops AI", "buys an AI product", "AI services", "resells AI", "AI-adjacent"];
 const why = i => pai[i] === 255 ? "Outside the awards we examined" : [ROLE[role[i]],
-  status[i] === 2 ? (oldl[i] ? "in the old list, but Jev did not confirm it" : "description too thin to tell") : "",
-  status[i] === 3 ? (oldl[i] ? "in the old list" : "not in the old list") : "", `Jev: ${pai[i]}% AI-related`].filter(Boolean).join(", ");
+  status[i] === 2 ? "Jev could not confirm it from the description" : "", `Jev: ${pai[i]}% AI-related`].filter(Boolean).join(", ");
 const visible = Array(4).fill(true);  // show/hide per category, in every colouring
-let oldFilter = "all", agencyFilter = -1;  // old list: all | old | new; agency index or -1 for all
-const keep = i => (oldFilter === "all" || (oldFilter === "old") === !!oldl[i]) && (agencyFilter < 0 || agency[i] === agencyFilter);
+let agencyFilter = -1;  // agency index, or -1 for all
+const keep = i => agencyFilter < 0 || agency[i] === agencyFilter;
 const shown = i => visible[status[i]] && keep(i);
 const OUT = [0.3, 0.33, 0.44], OUT_A = 0.05;  // awards outside the group being explored
 const colorBuf = new Float32Array(4 * N), sizeBuf = new Float32Array(N), groupOf = new Int16Array(N);
@@ -276,19 +274,16 @@ function legend() {
   if (mode === "agency") html = [...agencyRank].map((r, k) => [r, k]).filter(x => x[0] < 9).sort((a, b) => a[0] - b[0]).map(([r, k]) => item(css(PAL[r]), meta.agencies[k])).join("") + item(css(PAL[9]), "Other agencies");
   L.innerHTML = html; L.style.display = html ? "block" : "none";
 }
-const aiIdx = []; for (let i = 0; i < N; i++) if (oldl[i]) aiIdx.push(i);
-function outline() {  // yellow rings: old-list awards (toggle) and the award being read
-  const o = $("#ring").checked ? [...aiIdx] : []; if (current != null) o.push(current);
-  graph.setConfigPartial({ outlinedPointIndices: o.length ? o : undefined }); graph.render();
+function outline() {  // yellow ring: the award being read
+  graph.setConfigPartial({ outlinedPointIndices: current != null ? [current] : undefined }); graph.render();
 }
-$("#ring").onchange = outline;
 
 // ---- navigation -----------------------------------------------------------------------------------------------
-let sortBy = "n", kidStats = [], nodeStats = Array(5).fill(0);
+let sortBy = "n", kidStats = [], nodeStats = Array(4).fill(0);
 function stats(t) {
-  kidStats = Array.from({ length: Math.max(1, t.children.length) }, () => Array(5).fill(0)); nodeStats = Array(5).fill(0);  // [0..3] per status, [4] AI-related not in the old list; filters applied
+  kidStats = Array.from({ length: Math.max(1, t.children.length) }, () => Array(4).fill(0)); nodeStats = Array(4).fill(0);  // per status, agency filter applied
   for (let i = 0; i < N; i++) { const g = groupOf[i]; if (g < 0 || !keep(i)) continue;
-    kidStats[g][status[i]]++; nodeStats[status[i]]++; if (status[i] === 3 && !oldl[i]) { kidStats[g][4]++; nodeStats[4]++; } }
+    kidStats[g][status[i]]++; nodeStats[status[i]]++; }
 }
 function goTo(t, fit = true) {
   cur = t; selection = null; current = null;
@@ -308,10 +303,10 @@ const mixRow = (v, total) => `<div class="row5 ${visible[v] ? "" : "off"}"><inpu
   <button data-status="${v}" title="Select these awards"><i class="dot" style="background:${css(ST.colors[v])}"></i><span>${ST.names[v]}</span><span class="n">${fmt(nodeStats[v])} (${pct(nodeStats[v], total)})</span></button>
   <button class="only" data-only="${v}">only</button></div>`;
 function renderNav() {
-  const t = cur, total = nodeStats.slice(0, 4).reduce((a, b) => a + b, 0);
+  const t = cur, total = nodeStats.reduce((a, b) => a + b, 0);
   const kids = kidsOf(t).map((k, ci) => ({ k, ci, s: kidStats[ci] }));
   const sorters = { n: (a, b) => b.k.n - a.k.n, ai: (a, b) => b.s[3] - a.s[3] || b.k.n - a.k.n,
-    share: (a, b) => b.s[4] - a.s[4] || b.s[3] - a.s[3], open: (a, b) => b.s[2] - a.s[2] };
+    open: (a, b) => b.s[2] - a.s[2] };
   kids.sort(sorters[sortBy]);
   const canSplit = !t.children.length && t.n >= 30;
   $("#nav").innerHTML = `
@@ -322,20 +317,19 @@ function renderNav() {
       <div class="mix">
         ${[3, 2, 1, 0].map(v => mixRow(v, total)).join("")}
         <div class="filters">
-          <div class="seg" title="Awards from the earlier list of AI awards">${[["all", "All awards"], ["new", "Not in old list"], ["old", "In old list"]].map(([v, l]) => `<button data-old="${v}" class="${v === oldFilter ? "on" : ""}">${l}</button>`).join("")}</div>
           <select id="agf" class="btn" aria-label="Agency"><option value="-1">All agencies</option>${meta.agencies.map((a, k) => [a, k]).sort((x, y) => x[0].localeCompare(y[0])).map(([a, k]) => `<option value="${k}" ${k === agencyFilter ? "selected" : ""}>${esc(a)}</option>`).join("")}</select>
         </div>
       </div>
-      <div id="filtered" style="display:${visible.every(Boolean) && oldFilter === "all" && agencyFilter < 0 ? "none" : "block"}">Map shows only ${[visible.every(Boolean) ? "" : visible.map((v, k) => v ? ST.names[k].toLowerCase() : null).filter(Boolean).join(", ") || "nothing", oldFilter === "all" ? "" : `awards ${oldFilter === "old" ? "in" : "not in"} the old list`, agencyFilter < 0 ? "" : esc(meta.agencies[agencyFilter])].filter(Boolean).join("; ")}. <button data-showall>Show all</button></div>
+      <div id="filtered" style="display:${visible.every(Boolean) && agencyFilter < 0 ? "none" : "block"}">Map shows only ${[visible.every(Boolean) ? "" : visible.map((v, k) => v ? ST.names[k].toLowerCase() : null).filter(Boolean).join(", ") || "nothing", agencyFilter < 0 ? "" : esc(meta.agencies[agencyFilter])].filter(Boolean).join("; ")}. <button data-showall>Show all</button></div>
       <div id="actions">
         ${t.parent >= 0 ? `<button class="btn" id="up">Up a level <kbd>U</kbd></button>` : ""}
         ${canSplit ? `<button class="btn primary" id="split">Split into sub-topics</button>` : ""}
       </div>
     </div>
-    ${kids.length ? `<div id="sortbar">Sub-topics by <button data-s="n">size</button><button data-s="ai">AI-related</button><button data-s="share">AI not in old list</button><button data-s="open">needs a look</button></div>
+    ${kids.length ? `<div id="sortbar">Sub-topics by <button data-s="n">size</button><button data-s="ai">AI-related</button><button data-s="open">needs a look</button></div>
     <ol id="kids">${kids.map(({ k, ci, s }) => `<li data-node="${k.id}" data-ci="${ci}"><span class="sw" style="background:${css(PAL[ci % PAL.length])}"></span>
       <div><div class="nm">${esc(name(k))}</div>
-      <div class="sub">${k.children.length ? `${k.children.length} sub-topics. ` : ""}${s[3] ? `<b class="b-ai">${fmt(s[3])} AI-related</b>${s[4] ? ` (${fmt(s[4])} not in old list)` : ""}, ` : ""}${s[2] ? `<b class="b-look">${fmt(s[2])} need a look</b>, ` : ""}${fmt(s[0] + s[1])} not AI or not looked at</div></div>
+      <div class="sub">${k.children.length ? `${k.children.length} sub-topics. ` : ""}${s[3] ? `<b class="b-ai">${fmt(s[3])} AI-related</b>, ` : ""}${s[2] ? `<b class="b-look">${fmt(s[2])} need a look</b>, ` : ""}${fmt(s[0] + s[1])} not AI or not looked at</div></div>
       <span class="n">${fmt(k.n)}</span></li>`).join("")}</ol>`
     : `<p class="muted" style="padding:12px 18px">This is the finest precomputed topic.${canSplit ? " Split it to see what it contains." : ""}</p>`}`;
   document.querySelectorAll("#sortbar button").forEach(b => b.classList.toggle("on", b.dataset.s === sortBy));
@@ -345,8 +339,7 @@ $("#nav").addEventListener("click", e => {
   const vis = e.target.closest("[data-vis]"), only = e.target.closest("[data-only]");
   if (vis) { visible[+vis.dataset.vis] = vis.checked; return refilter(); }
   if (only) { visible.fill(false); visible[+only.dataset.only] = true; return refilter(); }
-  if (e.target.closest("[data-showall]")) { visible.fill(true); oldFilter = "all"; agencyFilter = -1; stats(cur); return refilter(); }
-  const of = e.target.closest("[data-old]"); if (of) { oldFilter = of.dataset.old; stats(cur); return refilter(); }
+  if (e.target.closest("[data-showall]")) { visible.fill(true); agencyFilter = -1; stats(cur); return refilter(); }
   if (n) return goTo(T[+n.dataset.node]);
   if (s) { sortBy = s.dataset.s; return renderNav(); }
   if (st) { const v = +st.dataset.status, idx = []; for (let i = 0; i < N; i++) if (groupOf[i] >= 0 && status[i] === v && keep(i)) idx.push(i);
@@ -585,7 +578,7 @@ function renderGroupPanel(idx, title, isSelection) {
     <div class="row"><input class="tagin" id="tagin" placeholder="one or more tags, comma separated" list="taglist"><button class="btn primary" id="tagadd">Add</button><button class="btn" id="tagrm">Remove</button></div>
     <div class="row" style="margin-top:10px"><button class="btn" id="expsel">Export as CSV</button>${isSelection && n >= 30 ? '<button class="btn" id="splitsel">Split into sub-topics</button>' : ""}</div>
     <h2>Awards</h2>
-    <div class="chips" id="lf">${[["all", "All"], ["3", "AI-related"], ["new", "AI, not in old list"], ["2", "Needs a look"], ["1", "Not AI"]].map(([v, l]) => `<button data-f="${v}" class="${v === listFilter ? "on" : ""}">${l}</button>`).join("")}</div>
+    <div class="chips" id="lf">${[["all", "All"], ["3", "AI-related"], ["2", "Needs a look"], ["1", "Not AI"]].map(([v, l]) => `<button data-f="${v}" class="${v === listFilter ? "on" : ""}">${l}</button>`).join("")}</div>
     <div class="list" id="alist">Loading…</div>
     <h2>Finest topics in here</h2>${bars(ft, n, k => name(T[leafOf[k]]), "leaf")}
     <h2>Agencies</h2>${bars(ag, n, k => meta.agencies[k])}` : ""}
@@ -602,7 +595,7 @@ function renderGroupPanel(idx, title, isSelection) {
 }
 async function listAwards(idx) {
   // 50 awards spread evenly through the group (index order would show only the first agency files)
-  const pool = listFilter === "all" ? idx : Array.from(idx).filter(i => listFilter === "new" ? status[i] === 3 && !oldl[i] : status[i] === +listFilter);
+  const pool = listFilter === "all" ? idx : Array.from(idx).filter(i => status[i] === +listFilter);
   const pick = selection?.ranked && selection.idx === idx ? Array.from(pool).slice(0, 50) : sampleIdx(pool, 50);  // search results keep their order
   const el = $("#alist"); if (!pick.length) { el.innerHTML = '<p class="muted">None in this group.</p>'; return; }
   const rows = await Promise.all(pick.map(i => getAward(i)));
@@ -694,10 +687,10 @@ const REVIEW_NAMES = ["not looked at", "not AI", "needs a look", "AI-related"];
 async function exportStatic(body) {  // same columns as server.py's export
   const idx = body.idx || tagged(body.tags, body.mode), MAX = 20000;
   if (idx.length > MAX) { $("#status").textContent = `Export is limited to ${fmt(MAX)} awards here. Select fewer.`; return null; }
-  const q = v => `"${String(v ?? "").replace(/"/g, '""')}"`, rows = [["idx", "tags", "review", "role", "jev_ai_pct", "in_old_list", "topic_id", "topic", "award_id", "recipient", "uei", "agency", "kind", "url", "description"]];
+  const q = v => `"${String(v ?? "").replace(/"/g, '""')}"`, rows = [["idx", "tags", "review", "role", "jev_ai_pct", "topic_id", "topic", "award_id", "recipient", "uei", "agency", "kind", "url", "description"]];
   for (const i of [...idx].sort((a, b) => a - b)) {
     const a = await getAward(i), leaf = T[leafOf[fine[i]]];
-    rows.push([i, a.tags.join("; "), REVIEW_NAMES[status[i]], ROLE[role[i]], pai[i] === 255 ? "" : pai[i], oldl[i] ? "yes" : "no", fine[i], name(leaf), a.award_id, a.recipient, a.uei, a.agency, a.kind, a.url, a.descriptions.join(" | ")]);
+    rows.push([i, a.tags.join("; "), REVIEW_NAMES[status[i]], ROLE[role[i]], pai[i] === 255 ? "" : pai[i], fine[i], name(leaf), a.award_id, a.recipient, a.uei, a.agency, a.kind, a.url, a.descriptions.join(" | ")]);
   }
   return new Blob([rows.map(r => r.map(q).join(",")).join("\n")], { type: "text/csv" });
 }
