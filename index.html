@@ -290,7 +290,7 @@ function stats(t) {
     kidStats[g][status[i]]++; nodeStats[status[i]]++; }
 }
 function goTo(t, fit = true) {
-  cur = t; selection = null; current = null;
+  cur = t; selection = null; current = null; setScope(null);
   computeGroups(t); stats(t); paint(); outline();
   graph.setConfigPartial({ highlightedPointIndices: undefined }); graph.render();
   renderNav(); renderNodePanel();
@@ -483,13 +483,26 @@ new ResizeObserver(drawLabels).observe(labelsEl);
 $("#search").oninput = e => {
   const q = e.target.value.trim().toLowerCase(), R = $("#results");
   if (q.length < 2) { R.style.display = "none"; return; }
+  const sf = scopeFine(), inT = t => t.idx ? Array.from(t.idx).filter(inScope).length : leavesUnder(t).reduce((a, l) => a + sf[l], 0);
   const hits = T.filter(t => t.parent >= 0 && (name(t).toLowerCase().includes(q) || t.terms.some(w => w.includes(q))))
-    .map(t => (t.shown = shownIn(t), t)).filter(t => t.shown)
+    .map(t => (t.shown = scope ? inT(t) : shownIn(t), t)).filter(t => t.shown)
     .sort((a, b) => (name(b).toLowerCase().includes(q) - name(a).toLowerCase().includes(q)) || b.n - a.n).slice(0, 25);
-  R.innerHTML = hits.map(t => `<div data-node="${t.id}">${esc(name(t))} <span class="n">${fmt(t.shown)}</span><small>${esc(ancestry(t).slice(1, -1).map(name).join(" › ") || "Top level")}</small></div>`).join("") || '<div class="muted">No topic matches among the awards on the map</div>';
+  R.innerHTML = hits.map(t => `<div data-node="${t.id}">${esc(name(t))} <span class="n">${fmt(t.shown)}</span><small>${esc(ancestry(t).slice(1, -1).map(name).join(" › ") || "Top level")}</small></div>`).join("") || `<div class="muted">No topic matches ${scope ? "in your lasso selection" : "among the awards on the map"}</div>`;
   R.style.display = "block";
 };
-$("#results").onclick = e => { const d = e.target.closest("[data-node]"); if (d) { $("#results").style.display = "none"; $("#search").value = ""; goTo(T[+d.dataset.node]); } };
+$("#results").onclick = e => { const d = e.target.closest("[data-node]"); if (d) { $("#results").style.display = "none"; $("#search").value = ""; const t = T[+d.dataset.node];
+  if (!scope) return goTo(t);
+  const idx = Array.from(members(t)).filter(inScope); setSelection(idx, `${name(t)}, in your lasso selection`); fitTo(idx); } };
+
+// ---- lasso scope: after a lasso, both searches look only inside the lassoed awards (Escape or navigating clears it) ----
+let scope = null;
+const inScope = i => shown(i) && (!scope || scope.has(i));
+function scopeFine() { const c = scope ? new Uint32Array(FINE) : shownFine; if (scope) for (const i of scope) if (shown(i)) c[fine[i]]++; return c; }
+function setScope(idx) {
+  scope = idx ? new Set(idx) : null;
+  $("#search").placeholder = scope ? `Find a topic in your ${fmt(scope.size)} lassoed awards` : "Find a topic, e.g. machine learning";
+  $("#msearch").placeholder = scope ? `Search your ${fmt(scope.size)} lassoed awards by meaning` : "Search awards by meaning, then Enter";
+}
 
 // ---- search by meaning: the same model as the map (bge-base-en-v1.5) runs in the browser -----------------------------
 // The query vector goes through the map's PCA (search/proj.bin.z, 768 + 1 bias rows x 64), is compared with the 1,500
@@ -511,18 +524,18 @@ async function searchMeaning(q) {
   const norm = a => Math.hypot(...a) || 1, vn = norm(v);
   const cos = (a, o) => { let x = 0, n = 0; for (let j = 0; j < 64; j++) { x += a[o + j] * v[j]; n += a[o + j] ** 2; } return x / (Math.sqrt(n) || 1) / vn; };
   // the 40 nearest topics that have awards on the map; with narrow filters, more topics until 3,000 candidates (max 300)
-  const ranked = [...Array(FINE).keys()].filter(t => shownFine[t]).map(t => [t, cos(cents, 64 * t)]).sort((a, b) => b[1] - a[1]);
+  const sf = scopeFine(), ranked = [...Array(FINE).keys()].filter(t => sf[t]).map(t => [t, cos(cents, 64 * t)]).sort((a, b) => b[1] - a[1]);
   const topics = []; let cand = 0;
-  for (const [t] of ranked) { if (topics.length >= 300 || (topics.length >= 40 && cand >= 3000)) break; topics.push(t); cand += shownFine[t]; }
+  for (const [t] of ranked) { if (topics.length >= 300 || (topics.length >= 40 && cand >= 3000)) break; topics.push(t); cand += sf[t]; }
   const hits = [];
   for (const f of await Promise.all(topics.map(topicVecs))) {
     const a = new Float32Array(64);
-    for (let k = 0; k < f.idx.length; k++) { const i = f.idx[k]; if (!shown(i)) continue;
+    for (let k = 0; k < f.idx.length; k++) { const i = f.idx[k]; if (!inScope(i)) continue;
       for (let j = 0; j < 64; j++) a[j] = f.q[64 * k + j] * vecScale[j]; hits.push([i, cos(a, 0)]); }
   }
   hits.sort((a, b) => b[1] - a[1]); const idx = hits.slice(0, 300).map(x => x[0]);
-  st.textContent = idx.length ? `The ${idx.length} awards closest in meaning, best first, among the awards on the map.` : "No awards on the map match. Tick more categories or change the agency.";
-  if (cur.parent >= 0) goTo(T[0], false);
+  st.textContent = idx.length ? `The ${idx.length} awards closest in meaning, best first, ${scope ? "in your lasso selection" : "among the awards on the map"}.` : scope ? "No awards in your lasso selection match." : "No awards on the map match. Tick more categories or change the agency.";
+  if (cur.parent >= 0 && !scope) goTo(T[0], false);  // lassoed awards are all inside the current group
   setSelection(idx, `Closest to “${q}”`, true); if (idx.length) fitTo(idx);
 }
 $("#msearch").onkeydown = e => { if (e.key === "Enter" && e.target.value.trim()) searchMeaning(e.target.value.trim()).catch(err => $("#mstatus").textContent = "Search failed: " + err.message); };
@@ -553,6 +566,7 @@ lasso.onpointerup = e => {
   const found = graph.findPointsInPolygon(p).filter(i => groupOf[i] >= 0 && shown(i));  // only what the map shows, inside the group
   const add = e.shiftKey && selection ? selection.idx : [];
   setSelection(add.length ? [...new Set([...add, ...found])] : found, add.length ? "Lasso selection (added to)" : "Lasso selection");
+  setScope(selection.idx);
 };
 let mouse = [0, 0];
 $("#map").addEventListener("mousemove", e => { const r = $("#map").getBoundingClientRect(); mouse = [e.clientX - r.left, e.clientY - r.top]; });
@@ -568,7 +582,7 @@ function setSelection(idx, title, ranked = false) {
   graph.setConfigPartial({ highlightedPointIndices: idx }); graph.render(); renderGroupPanel(idx, title, true);
 }
 function clearSelection() {
-  selection = null; current = null; outline(); graph.setConfigPartial({ highlightedPointIndices: undefined }); graph.render(); renderNodePanel();
+  setScope(null); selection = null; current = null; outline(); graph.setConfigPartial({ highlightedPointIndices: undefined }); graph.render(); renderNodePanel();
 }
 function renderNodePanel() { if (cur.parent < 0) renderHome(); else renderGroupPanel(members(cur), name(cur), false); }
 function counts(idx, key, n) { const c = new Uint32Array(n); for (const i of idx) c[key(i)]++; return [...c].map((v, k) => [k, v]).filter(x => x[1]).sort((a, b) => b[1] - a[1]); }
